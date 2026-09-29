@@ -1,7 +1,6 @@
 import logging
 import threading
 import asyncio
-from datetime import datetime, timedelta
 
 from flask import Flask, request, jsonify, render_template
 from telegram import Update, InlineKeyboardMarkup, InlineKeyboardButton
@@ -10,6 +9,7 @@ from telegram.ext import (
     CallbackQueryHandler,
     ChatMemberHandler,
     CommandHandler,
+    InlineQueryHandler,
     MessageHandler,
     filters,
 )
@@ -42,6 +42,8 @@ from handlers import (
     direct,
     abandoned,
     notif,
+    admin_stock,
+    inline,
 )
 
 logging.basicConfig(
@@ -52,7 +54,7 @@ logger = logging.getLogger("larizinha-bot")
 
 
 # ═══════════════════════════════════════════════
-# FLASK — Health Check + Mini App
+# FLASK
 # ═══════════════════════════════════════════════
 flask_app = Flask(__name__)
 loop: asyncio.AbstractEventLoop | None = None
@@ -95,7 +97,7 @@ def run_flask():
 
 
 # ═══════════════════════════════════════════════
-# PTB — Post Init (DB + JobQueue)
+# POST INIT
 # ═══════════════════════════════════════════════
 async def post_init(app):
     global loop
@@ -105,7 +107,6 @@ async def post_init(app):
     await db.seed_products()
     logger.info("Banco iniciado e produtos populados.")
 
-    # ─── Job: Carrinho Abandonado (roda a cada 60s)
     if app.job_queue:
         app.job_queue.run_repeating(
             abandoned.check_abandoned_carts,
@@ -120,7 +121,6 @@ async def post_init(app):
 # COMANDOS ADMIN
 # ═══════════════════════════════════════════════
 async def mark_paid(update: Update, context):
-    """Simula pagamento de um PIX (só admin). Uso: /pago <pix_id>"""
     if update.effective_user.id not in ADMIN_IDS:
         return
     if not context.args:
@@ -133,7 +133,6 @@ async def mark_paid(update: Update, context):
 
 
 async def cancelar(update: Update, context):
-    """Cancela qualquer fluxo que esteja aguardando input."""
     for k in (
         "awaiting_multi",
         "awaiting_gift",
@@ -149,14 +148,13 @@ async def cancelar(update: Update, context):
 
 
 async def setpin_command(update: Update, context):
-    """Abre o Mini App de cadastro de senha de saque."""
     user_id = update.effective_user.id
     url = f"{MINIAPP_BASE_URL}/miniapp/senha/{user_id}"
 
     kb = InlineKeyboardMarkup([[
         InlineKeyboardButton(
             "🔐 Abrir Cadastro de Senha",
-            web_app={"url": url},  # WebAppInfo (dict funciona com PTB 21+)
+            web_app={"url": url},
         )
     ]])
     await update.message.reply_text(
@@ -166,7 +164,6 @@ async def setpin_command(update: Update, context):
 
 
 async def myid_command(update: Update, context):
-    """Retorna o ID do usuário e do chat (útil pra pegar IDs de canais)."""
     await update.message.reply_text(
         f"👤 Seu ID: <code>{update.effective_user.id}</code>\n"
         f"💬 Chat ID: <code>{update.effective_chat.id}</code>",
@@ -175,13 +172,9 @@ async def myid_command(update: Update, context):
 
 
 # ═══════════════════════════════════════════════
-# TEXTO LIVRE — Roteador único (ForceReply)
+# ROTEADOR DE TEXTO LIVRE
 # ═══════════════════════════════════════════════
 async def _text_router(update: Update, context):
-    """
-    Encaminha a mensagem de texto para o handler correto conforme
-    o estado do usuário (context.user_data).
-    """
     ud = context.user_data
 
     if ud.get("awaiting_multi"):
@@ -208,12 +201,11 @@ async def _text_router(update: Update, context):
     if ud.get("awaiting_search"):
         return await search.search_handler(update, context)
 
-    # Nenhum fluxo ativo: silencia (evita poluir o chat)
     return
 
 
 # ═══════════════════════════════════════════════
-# MINI APP — Abrir via botão dentro do bot
+# MINI APP via botão
 # ═══════════════════════════════════════════════
 async def _open_miniapp(update: Update, context):
     query = update.callback_query
@@ -239,12 +231,12 @@ async def _open_miniapp(update: Update, context):
 
 
 # ═══════════════════════════════════════════════
-# BUILD APP (registro de handlers)
+# BUILD APP
 # ═══════════════════════════════════════════════
 def build_app():
     app = ApplicationBuilder().token(BOT_TOKEN).post_init(post_init).build()
 
-    # ─────────── COMANDOS ───────────
+    # ─── COMANDOS
     app.add_handler(CommandHandler("start", start.start_command))
     app.add_handler(CommandHandler("pago", mark_paid))
     app.add_handler(CommandHandler("cancelar", cancelar))
@@ -252,8 +244,10 @@ def build_app():
     app.add_handler(CommandHandler("myid", myid_command))
     app.add_handler(CommandHandler("notif", notif.notif_command))
     app.add_handler(CommandHandler("broadcast", notif.broadcast_command))
+    app.add_handler(CommandHandler("addstock", admin_stock.addstock_command))
+    app.add_handler(CommandHandler("stock", admin_stock.stock_command))
 
-    # ─────────── CHATMEMBER (Gate) ───────────
+    # ─── GATE
     app.add_handler(
         ChatMemberHandler(
             start.chat_member_update,
@@ -261,55 +255,54 @@ def build_app():
         )
     )
 
-    # ═══════════════════════════════════════════
-    # CALLBACKS — a ordem importa!
-    # ═══════════════════════════════════════════
+    # ─── INLINE
+    app.add_handler(InlineQueryHandler(inline.inline_query))
 
-    # ─── Ações Diretas (botões de notificação/promoção)
+    # ─── AÇÕES DIRETAS
     app.add_handler(
         CallbackQueryHandler(direct.direct_router, pattern=r"^direct:")
     )
 
-    # ─── Entrega
+    # ─── ENTREGA
     app.add_handler(
         CallbackQueryHandler(delivery.reveal_product, pattern=r"^delivery:reveal:")
     )
 
-    # ─── PIX de compra
+    # ─── PIX COMPRA
     app.add_handler(CallbackQueryHandler(buy.generate_pix,   pattern=r"^pix:gen:"))
     app.add_handler(CallbackQueryHandler(buy.copy_pix,       pattern=r"^pix:copy:"))
     app.add_handler(CallbackQueryHandler(buy.check_pix,      pattern=r"^pix:check:"))
     app.add_handler(CallbackQueryHandler(buy.cancel_pix,     pattern=r"^pix:cancel:"))
     app.add_handler(CallbackQueryHandler(buy.cancel_new_pix, pattern=r"^pix:new_cancel$"))
 
-    # ─── PIX de recarga
-    app.add_handler(CallbackQueryHandler(topup.topup_copy,    pattern=r"^toppix:copy:"))
-    app.add_handler(CallbackQueryHandler(topup.topup_check,   pattern=r"^toppix:check:"))
-    app.add_handler(CallbackQueryHandler(topup.topup_cancel,  pattern=r"^toppix:cancel:"))
+    # ─── PIX RECARGA
+    app.add_handler(CallbackQueryHandler(topup.topup_copy,   pattern=r"^toppix:copy:"))
+    app.add_handler(CallbackQueryHandler(topup.topup_check,  pattern=r"^toppix:check:"))
+    app.add_handler(CallbackQueryHandler(topup.topup_cancel, pattern=r"^toppix:cancel:"))
 
-    # ─── Recarga
+    # ─── RECARGA
     app.add_handler(
         CallbackQueryHandler(topup.topup_pix_open, pattern=r"^topup:pix$")
     )
 
-    # ─── Compra
-    app.add_handler(CallbackQueryHandler(buy.buy_single,     pattern=r"^buy:"))
+    # ─── COMPRA
+    app.add_handler(CallbackQueryHandler(buy.buy_single,      pattern=r"^buy:"))
     app.add_handler(CallbackQueryHandler(multi.multi_start,   pattern=r"^buymulti:"))
     app.add_handler(CallbackQueryHandler(multi.multi_confirm, pattern=r"^multi:confirm:"))
     app.add_handler(CallbackQueryHandler(multi.multi_cancel,  pattern=r"^multi:cancel$"))
 
-    # ─── Histórico
+    # ─── HISTÓRICO
     app.add_handler(CallbackQueryHandler(history.history_router, pattern=r"^hist:"))
     app.add_handler(
         CallbackQueryHandler(history.history_router, pattern=r"^profile:history$")
     )
 
-    # ─── Gift Card
+    # ─── GIFT
     app.add_handler(CallbackQueryHandler(gift.gift_open,   pattern=r"^profile:gift$"))
     app.add_handler(CallbackQueryHandler(gift.gift_cancel, pattern=r"^gift:cancel$"))
     app.add_handler(CallbackQueryHandler(gift.gift_use,    pattern=r"^gift:use$"))
 
-    # ─── Alterar dados
+    # ─── ALTERAR
     app.add_handler(
         CallbackQueryHandler(alterdata.alter_open,     pattern=r"^profile:alter$")
     )
@@ -317,7 +310,7 @@ def build_app():
         CallbackQueryHandler(alterdata.alter_whatsapp, pattern=r"^alter:whatsapp$")
     )
 
-    # ─── Afiliados
+    # ─── AFILIADOS
     app.add_handler(
         CallbackQueryHandler(affiliates.affiliates_open, pattern=r"^menu:affiliates$")
     )
@@ -328,12 +321,12 @@ def build_app():
         CallbackQueryHandler(affiliates.affiliates_join, pattern=r"^aff:join$")
     )
 
-    # ─── Histórico de Saque (PDF)
+    # ─── HISTÓRICO SAQUE
     app.add_handler(
         CallbackQueryHandler(withdraw_history.withdraw_history, pattern=r"^aff:whist$")
     )
 
-    # ─── Saques
+    # ─── SAQUES
     app.add_handler(
         CallbackQueryHandler(withdraw.withdraw_open,        pattern=r"^aff:withdraw$")
     )
@@ -350,29 +343,29 @@ def build_app():
         CallbackQueryHandler(withdraw.withdraw_sacar,       pattern=r"^wd:sacar$")
     )
 
-    # ─── Mini App (botão dentro do bot)
+    # ─── MINI APP
     app.add_handler(
         CallbackQueryHandler(_open_miniapp, pattern=r"^aff:setpin$")
     )
 
-    # ─── Top Compradores
+    # ─── TOP
     app.add_handler(CallbackQueryHandler(top.top_open,   pattern=r"^menu:top$"))
     app.add_handler(CallbackQueryHandler(top.top_filter, pattern=r"^top:"))
 
-    # ─── Pesquisar
+    # ─── PESQUISAR
     app.add_handler(
         CallbackQueryHandler(search.search_open, pattern=r"^menu:search$")
     )
 
-    # ─── Produto (catálogo → produto)
+    # ─── PRODUTO
     app.add_handler(
         CallbackQueryHandler(catalog.product_callback, pattern=r"^prod:")
     )
 
-    # ─── Menu (fallback genérico)
+    # ─── MENU (fallback)
     app.add_handler(CallbackQueryHandler(menu.menu_router))
 
-    # ─────────── TEXTO LIVRE (ForceReply) ───────────
+    # ─── TEXTO LIVRE
     app.add_handler(
         MessageHandler(filters.TEXT & ~filters.COMMAND, _text_router)
     )
@@ -384,7 +377,6 @@ def build_app():
 # BOOT
 # ═══════════════════════════════════════════════
 def main():
-    # Sobe o Flask em thread separada (healthcheck + mini app)
     threading.Thread(target=run_flask, daemon=True).start()
     logger.info("Servidor Flask rodando na porta %s", PORT)
 
@@ -394,7 +386,7 @@ def main():
         logger.info("Rodando via WEBHOOK em %s", WEBHOOK_URL)
         app.run_webhook(
             listen="0.0.0.0",
-            port=PORT + 1,  # porta interna diferente do Flask
+            port=PORT + 1,
             url_path=BOT_TOKEN,
             webhook_url=f"{WEBHOOK_URL}/{BOT_TOKEN}",
             drop_pending_updates=True,
