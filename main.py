@@ -65,11 +65,13 @@ def health():
     return "Larizinha Store Bot — OK"
 
 
+# ─── Mini App: página HTML
 @flask_app.get("/miniapp/senha/<int:user_id>")
 def miniapp_senha(user_id: int):
     return render_template("miniapp_senha.html", user_id=user_id)
 
 
+# ─── Mini App: salvar senha (rota antiga, mantida)
 @flask_app.post("/miniapp/senha/<int:user_id>")
 def miniapp_senha_save(user_id: int):
     data = request.get_json(silent=True) or {}
@@ -90,6 +92,74 @@ def miniapp_senha_save(user_id: int):
         return jsonify(ok=False, error="Erro interno."), 500
 
     return jsonify(ok=True)
+
+
+# ─── API: salvar senha (chamada pelo Web App)
+@flask_app.post("/api/salvar-senha/<int:user_id>")
+def api_salvar_senha(user_id: int):
+    data = request.get_json(silent=True) or {}
+    pin = str(data.get("pin", "")).strip()
+
+    if not pin.isdigit() or not (4 <= len(pin) <= 6):
+        return jsonify(ok=False, error="Senha inválida (4 a 6 dígitos)."), 400
+
+    if loop is None:
+        return jsonify(ok=False, error="Servidor iniciando. Tente novamente."), 503
+
+    try:
+        asyncio.run_coroutine_threadsafe(
+            db.set_payout_password(user_id, pin), loop
+        ).result(timeout=5)
+    except Exception as e:
+        logger.exception("Erro salvando senha: %s", e)
+        return jsonify(ok=False, error="Erro interno ao salvar senha."), 500
+
+    return jsonify(ok=True, message="Senha salva com sucesso.")
+
+
+# ─── API: salvar email de recuperação
+@flask_app.post("/api/salvar-email/<int:user_id>")
+def api_salvar_email(user_id: int):
+    data = request.get_json(silent=True) or {}
+    email = str(data.get("email", "")).strip()
+
+    if "@" not in email or "." not in email.split("@")[-1]:
+        return jsonify(ok=False, error="E-mail inválido."), 400
+
+    if loop is None:
+        return jsonify(ok=False, error="Servidor iniciando."), 503
+
+    try:
+        async def _save():
+            await db._db.execute(
+                "UPDATE users SET whatsapp = COALESCE(whatsapp, ?) WHERE user_id = ?",
+                (email, user_id),
+            )
+            await db._db.commit()
+
+        asyncio.run_coroutine_threadsafe(_save(), loop).result(timeout=5)
+    except Exception as e:
+        logger.exception("Erro salvando email: %s", e)
+        return jsonify(ok=False, error="Erro interno."), 500
+
+    return jsonify(ok=True)
+
+
+# ─── API: checar se já tem senha cadastrada
+@flask_app.get("/api/checar-senha/<int:user_id>")
+def api_checar_senha(user_id: int):
+    if loop is None:
+        return jsonify(ok=False, error="Servidor iniciando."), 503
+
+    try:
+        u = asyncio.run_coroutine_threadsafe(
+            db.get_user(user_id), loop
+        ).result(timeout=5)
+        tem_senha = bool(u and u.get("payout_password"))
+        return jsonify(ok=True, tem_senha=tem_senha)
+    except Exception as e:
+        logger.exception("Erro checando senha: %s", e)
+        return jsonify(ok=False, error="Erro interno."), 500
 
 
 def run_flask():
