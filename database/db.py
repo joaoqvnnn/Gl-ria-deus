@@ -1,9 +1,22 @@
 import aiosqlite
 import uuid
+import hashlib
 from datetime import datetime, timedelta
 from config import DB_PATH
 
 _db: aiosqlite.Connection | None = None
+
+
+def hash_pin(pin: str) -> str:
+    return hashlib.sha256(pin.encode()).hexdigest()
+
+
+async def _try_alter(sql: str):
+    try:
+        await _db.execute(sql)
+        await _db.commit()
+    except Exception:
+        pass
 
 
 async def init_db():
@@ -79,9 +92,38 @@ async def init_db():
             redeemed_at  TIMESTAMP,
             created_at   TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         );
+
+        CREATE TABLE IF NOT EXISTS affiliate_earnings (
+            id           INTEGER PRIMARY KEY AUTOINCREMENT,
+            affiliate_id INTEGER NOT NULL,
+            referred_id  INTEGER NOT NULL,
+            amount       REAL NOT NULL,
+            source       TEXT,
+            created_at   TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );
+
+        CREATE TABLE IF NOT EXISTS withdrawals (
+            id           TEXT PRIMARY KEY,
+            user_id      INTEGER NOT NULL,
+            amount       REAL NOT NULL,
+            pix_key_type TEXT,
+            pix_key      TEXT,
+            status       TEXT DEFAULT 'pending',
+            created_at   TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            processed_at TIMESTAMP
+        );
         """
     )
     await _db.commit()
+
+    # Colunas novas em users (seguro para bases existentes)
+    await _try_alter("ALTER TABLE users ADD COLUMN referred_by INTEGER")
+    await _try_alter("ALTER TABLE users ADD COLUMN is_affiliate INTEGER DEFAULT 0")
+    await _try_alter("ALTER TABLE users ADD COLUMN payout_password TEXT")
+    await _try_alter("ALTER TABLE users ADD COLUMN pix_key_type TEXT")
+    await _try_alter("ALTER TABLE users ADD COLUMN pix_key TEXT")
+    await _try_alter("ALTER TABLE users ADD COLUMN pix_name TEXT")
+    await _try_alter("ALTER TABLE users ADD COLUMN pix_bank TEXT")
 
 
 # ───────────── USERS ─────────────
@@ -107,62 +149,94 @@ async def get_user(user_id):
 
 async def update_balance(user_id: int, delta: float):
     await _db.execute(
-        "UPDATE users SET balance = balance + ? WHERE user_id = ?",
-        (delta, user_id),
+        "UPDATE users SET balance = balance + ? WHERE user_id = ?", (delta, user_id)
     )
     await _db.commit()
 
 
-async def set_whatsapp(user_id: int, whatsapp: str | None):
+async def set_whatsapp(user_id: int, whatsapp):
+    await _db.execute("UPDATE users SET whatsapp = ? WHERE user_id = ?", (whatsapp, user_id))
+    await _db.commit()
+
+
+async def set_referred_by(user_id: int, referrer_id: int):
+    if user_id == referrer_id:
+        return
+    u = await get_user(user_id)
+    if not u or u.get("referred_by"):
+        return
+    await _db.execute("UPDATE users SET referred_by = ? WHERE user_id = ?", (referrer_id, user_id))
+    await _db.commit()
+
+
+async def activate_affiliate(user_id: int):
+    await _db.execute("UPDATE users SET is_affiliate = 1 WHERE user_id = ?", (user_id,))
+    await _db.commit()
+
+
+async def set_payout_password(user_id: int, pin: str):
     await _db.execute(
-        "UPDATE users SET whatsapp = ? WHERE user_id = ?",
-        (whatsapp, user_id),
+        "UPDATE users SET payout_password = ? WHERE user_id = ?",
+        (hash_pin(pin), user_id),
+    )
+    await _db.commit()
+
+
+async def check_payout_password(user_id: int, pin: str) -> bool:
+    u = await get_user(user_id)
+    if not u or not u.get("payout_password"):
+        return False
+    return u["payout_password"] == hash_pin(pin)
+
+
+async def set_pix_key(user_id, key_type, pix_key, name=None, bank=None):
+    await _db.execute(
+        "UPDATE users SET pix_key_type=?, pix_key=?, pix_name=?, pix_bank=? WHERE user_id=?",
+        (key_type, pix_key, name, bank, user_id),
     )
     await _db.commit()
 
 
 async def user_stats(user_id: int) -> dict:
-    """Retorna estatísticas consolidadas para o perfil."""
-    # Compras
     cur = await _db.execute(
         "SELECT COUNT(*) AS c, COALESCE(SUM(total), 0) AS s FROM purchases WHERE user_id = ?",
         (user_id,),
     )
     row = await cur.fetchone()
-    compras = int(row["c"])
-    gasto = float(row["s"])
+    compras, gasto = int(row["c"]), float(row["s"])
 
-    # PIX inseridos (só recarga paga)
     cur = await _db.execute(
         "SELECT COALESCE(SUM(valor), 0) AS s FROM pix_pending "
         "WHERE user_id = ? AND tipo = 'recarga' AND status = 'paid'",
         (user_id,),
     )
-    row = await cur.fetchone()
-    pix_inseridos = float(row["s"])
+    pix_in = float((await cur.fetchone())["s"])
 
-    # Gifts resgatados
     cur = await _db.execute(
-        "SELECT COUNT(*) AS c, COALESCE(SUM(valor), 0) AS s FROM gift_cards "
-        "WHERE redeemed_by = ?",
+        "SELECT COUNT(*) AS c, COALESCE(SUM(valor), 0) AS s FROM gift_cards WHERE redeemed_by = ?",
         (user_id,),
     )
     row = await cur.fetchone()
-    gifts_count = int(row["c"])
-    gifts_valor = float(row["s"])
+    gifts_c, gifts_v = int(row["c"]), float(row["s"])
 
     return {
-        "compras": compras,
-        "gasto": gasto,
-        "pix_inseridos": pix_inseridos,
-        "gifts_count": gifts_count,
-        "gifts_valor": gifts_valor,
+        "compras": compras, "gasto": gasto,
+        "pix_inseridos": pix_in,
+        "gifts_count": gifts_c, "gifts_valor": gifts_v,
     }
 
 
 # ───────────── PRODUCTS ─────────────
 async def get_products():
     cur = await _db.execute("SELECT * FROM products WHERE active = 1 ORDER BY id ASC")
+    return [dict(r) for r in await cur.fetchall()]
+
+
+async def search_products(term: str):
+    cur = await _db.execute(
+        "SELECT * FROM products WHERE active = 1 AND name LIKE ? ORDER BY id ASC LIMIT 20",
+        (f"%{term}%",),
+    )
     return [dict(r) for r in await cur.fetchall()]
 
 
@@ -189,20 +263,17 @@ async def add_product(name, description, price, stock, emoji="📦", activate_ur
     await _db.commit()
 
 
-# ───────────── STOCK ITEMS ─────────────
+# ───────────── STOCK ─────────────
 async def take_stock_items(product_id: int, qty: int):
     cur = await _db.execute(
         "SELECT * FROM stock_items WHERE product_id = ? AND used = 0 LIMIT ?",
         (product_id, qty),
     )
-    rows = await cur.fetchall()
-    items = [dict(r) for r in rows]
+    items = [dict(r) for r in await cur.fetchall()]
     if items:
         ids = [it["id"] for it in items]
-        placeholders = ",".join("?" for _ in ids)
-        await _db.execute(
-            f"UPDATE stock_items SET used = 1 WHERE id IN ({placeholders})", ids
-        )
+        ph = ",".join("?" for _ in ids)
+        await _db.execute(f"UPDATE stock_items SET used = 1 WHERE id IN ({ph})", ids)
         await _db.commit()
     return items
 
@@ -228,17 +299,14 @@ async def get_purchase(pid: str):
 
 
 async def list_purchases(user_id: int, only_active: bool = False):
-    """Lista compras do usuário, opcionalmente apenas ativas (não vencidas)."""
     if only_active:
         cur = await _db.execute(
             "SELECT * FROM purchases WHERE user_id = ? AND expires_at > datetime('now') "
-            "ORDER BY created_at DESC",
-            (user_id,),
+            "ORDER BY created_at DESC", (user_id,),
         )
     else:
         cur = await _db.execute(
-            "SELECT * FROM purchases WHERE user_id = ? ORDER BY created_at DESC",
-            (user_id,),
+            "SELECT * FROM purchases WHERE user_id = ? ORDER BY created_at DESC", (user_id,),
         )
     return [dict(r) for r in await cur.fetchall()]
 
@@ -269,7 +337,7 @@ async def cancel_pix(pix_id):
     await _db.commit()
 
 
-# ───────────── GIFT CARDS ─────────────
+# ───────────── GIFTS ─────────────
 async def get_gift(code: str):
     cur = await _db.execute("SELECT * FROM gift_cards WHERE code = ?", (code,))
     row = await cur.fetchone()
@@ -284,12 +352,123 @@ async def redeem_gift(code: str, user_id: int):
     await _db.commit()
 
 
-async def create_gift(code: str, tipo: str, valor: float = 0, product_id: int | None = None):
+async def create_gift(code, tipo, valor=0, product_id=None):
     await _db.execute(
         "INSERT INTO gift_cards (code, tipo, valor, product_id) VALUES (?, ?, ?, ?)",
         (code, tipo, valor, product_id),
     )
     await _db.commit()
+
+
+# ───────────── AFILIADOS ─────────────
+async def affiliate_stats(user_id: int) -> dict:
+    # Indicados
+    cur = await _db.execute("SELECT COUNT(*) AS c FROM users WHERE referred_by = ?", (user_id,))
+    indicados = int((await cur.fetchone())["c"])
+
+    # Total ganho
+    cur = await _db.execute(
+        "SELECT COALESCE(SUM(amount), 0) AS s, COUNT(*) AS c FROM affiliate_earnings WHERE affiliate_id = ?",
+        (user_id,),
+    )
+    row = await cur.fetchone()
+    total_ganho = float(row["s"])
+    ganhos_count = int(row["c"])
+    media = (total_ganho / ganhos_count) if ganhos_count else 0.0
+
+    return {
+        "indicados": indicados,
+        "total_ganho": total_ganho,
+        "media": media,
+    }
+
+
+async def add_affiliate_earning(affiliate_id, referred_id, amount, source="recarga"):
+    await _db.execute(
+        "INSERT INTO affiliate_earnings (affiliate_id, referred_id, amount, source) "
+        "VALUES (?, ?, ?, ?)",
+        (affiliate_id, referred_id, amount, source),
+    )
+    await _db.commit()
+    # Credita no saldo do afiliado
+    await update_balance(affiliate_id, amount)
+
+
+async def list_affiliate_earnings(affiliate_id: int, limit: int = 50):
+    cur = await _db.execute(
+        "SELECT * FROM affiliate_earnings WHERE affiliate_id = ? ORDER BY created_at DESC LIMIT ?",
+        (affiliate_id, limit),
+    )
+    return [dict(r) for r in await cur.fetchall()]
+
+
+# ───────────── SAQUES ─────────────
+async def create_withdrawal(user_id, amount, pix_key_type, pix_key):
+    wid = str(uuid.uuid4())
+    await _db.execute(
+        "INSERT INTO withdrawals (id, user_id, amount, pix_key_type, pix_key) VALUES (?, ?, ?, ?, ?)",
+        (wid, user_id, amount, pix_key_type, pix_key),
+    )
+    await _db.commit()
+    cur = await _db.execute("SELECT * FROM withdrawals WHERE id = ?", (wid,))
+    return dict(await cur.fetchone())
+
+
+async def list_withdrawals(user_id: int):
+    cur = await _db.execute(
+        "SELECT * FROM withdrawals WHERE user_id = ? ORDER BY created_at DESC", (user_id,)
+    )
+    return [dict(r) for r in await cur.fetchall()]
+
+
+async def mark_withdrawal_processed(wid: str):
+    await _db.execute(
+        "UPDATE withdrawals SET status='processed', processed_at=CURRENT_TIMESTAMP WHERE id = ?",
+        (wid,),
+    )
+    await _db.commit()
+
+
+# ───────────── TOP COMPRADORES ─────────────
+async def top_buyers(limit: int = 10):
+    cur = await _db.execute(
+        "SELECT u.user_id, u.first_name, u.username, "
+        "COALESCE(SUM(p.total), 0) AS total "
+        "FROM users u LEFT JOIN purchases p ON p.user_id = u.user_id "
+        "GROUP BY u.user_id ORDER BY total DESC LIMIT ?",
+        (limit,),
+    )
+    return [dict(r) for r in await cur.fetchall()]
+
+
+async def top_by_balance(limit: int = 10):
+    cur = await _db.execute(
+        "SELECT user_id, first_name, username, balance AS total "
+        "FROM users ORDER BY balance DESC LIMIT ?",
+        (limit,),
+    )
+    return [dict(r) for r in await cur.fetchall()]
+
+
+async def top_by_topup(limit: int = 10):
+    cur = await _db.execute(
+        "SELECT u.user_id, u.first_name, u.username, COALESCE(SUM(px.valor),0) AS total "
+        "FROM users u LEFT JOIN pix_pending px ON px.user_id = u.user_id "
+        "AND px.tipo='recarga' AND px.status='paid' "
+        "GROUP BY u.user_id ORDER BY total DESC LIMIT ?",
+        (limit,),
+    )
+    return [dict(r) for r in await cur.fetchall()]
+
+
+async def top_by_gift(limit: int = 10):
+    cur = await _db.execute(
+        "SELECT u.user_id, u.first_name, u.username, COALESCE(SUM(g.valor),0) AS total "
+        "FROM users u LEFT JOIN gift_cards g ON g.redeemed_by = u.user_id "
+        "GROUP BY u.user_id ORDER BY total DESC LIMIT ?",
+        (limit,),
+    )
+    return [dict(r) for r in await cur.fetchall()]
 
 
 # ───────────── SEED ─────────────
@@ -306,7 +485,6 @@ async def seed_products():
          "✅ Renovação automática\n✅ Conta privada\n✅ Plano CANVA EDUCATION\n\n"
          "🔥🔥🔥 Garantia total 🔥🔥🔥",
          18.00, 3, "🎨"),
-
         ("Disney+ Plano Padrão", "Plano padrão Disney+ com catálogo completo.", 2.90, 10, "🏰"),
         ("GLOBO + CS + PREMIERE + TELECINE", "Pacote completo Globo + canais.", 5.90, 5, "📺"),
         ("GLOBOPLAY + CANAIS", "Tela (globoplay + canais) Plano Premium.", 3.90, 8, "🎬"),
@@ -330,10 +508,8 @@ async def seed_products():
             (1, f"canva_cliente{i}@larizinha.com", f"SenhaForte#{i}2026"),
         )
 
-    # Gift card de exemplo
     await _db.execute(
         "INSERT OR IGNORE INTO gift_cards (code, tipo, valor) VALUES (?, ?, ?)",
         ("LARI2026", "saldo", 10.00),
     )
-
     await _db.commit()
