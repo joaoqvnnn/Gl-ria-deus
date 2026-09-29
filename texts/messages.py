@@ -1,6 +1,10 @@
 from datetime import datetime
 
 
+# ═══════════════════════════════════════════════
+# MÓDULO 1 — GATE, MENU, CATÁLOGO, PRODUTO
+# ═══════════════════════════════════════════════
+
 # ────────────────────────────────────────────────
 # 🔐 1. GATE DE ENTRADA
 # ────────────────────────────────────────────────
@@ -68,10 +72,16 @@ def product_text(user: dict, product: dict) -> str:
 
 
 # ────────────────────────────────────────────────
-# 👤 8. MEU PERFIL
+# 👤 8. MEU PERFIL (com stats reais)
 # ────────────────────────────────────────────────
-def profile_text(user: dict) -> str:
+def profile_text(user: dict, stats: dict | None = None) -> str:
+    stats = stats or {}
     whatsapp = user.get("whatsapp") or "Não cadastrado"
+    compras = stats.get("compras", 0)
+    gasto = stats.get("gasto", 0.0)
+    pix_in = stats.get("pix_inseridos", 0.0)
+    gifts = stats.get("gifts_valor", 0.0)
+
     return (
         "👤 <b>Meu perfil</b>\n\n"
         "🔍 Veja aqui os detalhes da sua conta:\n\n"
@@ -80,10 +90,10 @@ def profile_text(user: dict) -> str:
         f"💰 Saldo Atual: <b>R$ {float(user['balance']):.2f}</b>\n"
         f"📲 Seu Whatsapp: {whatsapp}\n\n"
         "─── 📊 <b>Suas Movimentações:</b>\n"
-        "ー 🛒 Compras Realizadas: 0\n"
-        "ー 💰 Total Gasto Em Compras: R$ 0,00\n"
-        "ー 💠 Pix Inseridos: R$ 0,00\n"
-        "ー 🎁 Gifts Resgatados: R$ 0,00"
+        f"ー 🛒 Compras Realizadas: <b>{compras}</b>\n"
+        f"ー 💰 Total Gasto Em Compras: <b>R$ {gasto:.2f}</b>\n"
+        f"ー 💠 Pix Inseridos: <b>R$ {pix_in:.2f}</b>\n"
+        f"ー 🎁 Gifts Resgatados: <b>R$ {gifts:.2f}</b>"
     )
 
 
@@ -105,6 +115,10 @@ def about_text() -> str:
 def soon_text(area: str) -> str:
     return f"🚧 <b>{area}</b>\n\nEsse módulo será liberado em breve."
 
+
+# ═══════════════════════════════════════════════
+# MÓDULO 2 — COMPRA, PIX, ENTREGA, MULTI
+# ═══════════════════════════════════════════════
 
 # ────────────────────────────────────────────────
 # 💸 5. SALDO INSUFICIENTE
@@ -216,3 +230,173 @@ def multi_cancelled_text() -> str:
         "❌ <b>Compra cancelada!</b>\n\n"
         "Operação de compra múltipla foi cancelada."
     )
+
+
+# ═══════════════════════════════════════════════
+# MÓDULO 3 — PERFIL, HISTÓRICO, GIFT, DADOS, RECARGA
+# ═══════════════════════════════════════════════
+
+# ────────────────────────────────────────────────
+# 📜 9. HISTÓRICO DE COMPRAS
+# ────────────────────────────────────────────────
+def history_empty_text() -> str:
+    return (
+        "Você não tem compras no bot.\n"
+        "Quando comprar alguma conta, as informações dela ficarão exibidas aqui."
+    )
+
+
+def history_active_empty_text() -> str:
+    return "Você não tem compras ativas (não vencidas) no bot."
+
+
+def _fmt_date(s) -> str:
+    try:
+        return datetime.strptime(str(s)[:19], "%Y-%m-%d %H:%M:%S").strftime("%d/%m/%Y")
+    except Exception:
+        return str(s)
+
+
+def history_item_text(purchase: dict, idx: int, total: int, page: int, pages: int) -> str:
+    return (
+        f"📦 <b>Compras: {total}</b>\n\n"
+        f"⏰ Data da compra: <b>{_fmt_date(purchase['created_at'])}</b>\n"
+        f"📆 Vencimento: <b>{_fmt_date(purchase['expires_at'])}</b>\n"
+        f"💰 Valor: <b>R$ {float(purchase['total']):.2f}</b>\n"
+        f"🎫 ID da compra: <code>{purchase['id']}</code>\n"
+        f"⚜️ Serviço: <b>{purchase['product_name']}</b>\n"
+        f"📧 Email: <code>{purchase.get('email') or 'N/A'}</code>\n"
+        f"🔐 Senha: <code>{purchase.get('password') or 'N/A'}</code>\n"
+        "📃 Nota: Use o link abaixo para ativar:\n\n"
+        f"<i>Página {page}/{pages}</i>"
+    )
+
+
+# ────────────────────────────────────────────────
+# 🎁 10. GIFT CARD
+# ────────────────────────────────────────────────
+def gift_prompt_text() -> str:
+    return (
+        "🎁 <b>RESGATAR GIFT CARD</b>\n"
+        "Digite o código do seu gift card abaixo:\n"
+        "Exemplo: <code>ABC123XYZ456</code>"
+    )
+
+
+def gift_invalid_text() -> str:
+    return "❌ <b>Gift não encontrado.</b>\n\nVerifique o código e tente novamente."
+
+
+def gift_already_used_text() -> str:
+    return "❌ <b>Este gift card já foi resgatado.</b>"
+
+
+def gift_success_text(gift: dict, extra: str = "") -> str:
+    if gift.get("tipo") == "saldo":
+        return (
+            "🎉 <b>Gift Card resgatado!</b>\n\n"
+            f"💰 Você recebeu <b>R$ {float(gift.get('valor', 0)):.2f}</b> de saldo.\n"
+            f"💼 Saldo atualizado no seu perfil.\n{extra}"
+        )
+    return (
+        "🎉 <b>Gift Card resgatado!</b>\n\n"
+        "🎁 Você ganhou um produto!\n"
+        "Clique em <b>🎁 Usar</b> abaixo para acessá-lo.\n"
+        f"{extra}"
+    )
+
+
+# ────────────────────────────────────────────────
+# ✏️ 11. ALTERAR DADOS
+# ────────────────────────────────────────────────
+def alter_data_text(user: dict) -> str:
+    whats = user.get("whatsapp") or "Não cadastrado"
+    return (
+        "✏️ <b>Alterar Dados</b>\n"
+        "Selecione o dado que deseja alterar:\n\n"
+        f"📱 WhatsApp atual: <b>{whats}</b>"
+    )
+
+
+def whatsapp_prompt_text() -> str:
+    return (
+        "📱 <b>Envie seu número de WhatsApp</b>\n"
+        "Formato: DDD + Número (apenas números)\n"
+        "Exemplo: <code>11999998888</code>\n\n"
+        "⚠️ Envie <code>remover</code> para remover o número cadastrado."
+    )
+
+
+def whatsapp_invalid_text() -> str:
+    return (
+        "❌ <b>Número inválido!</b>\n\n"
+        "Formato: DDD + Número (apenas números).\n"
+        "Exemplo: <code>11999998888</code>"
+    )
+
+
+def whatsapp_updated_text(number: str) -> str:
+    return f"✅ <b>WhatsApp atualizado com sucesso!</b>\n\n📱 Novo número: <b>{number}</b>"
+
+
+def whatsapp_removed_text() -> str:
+    return "✅ <b>WhatsApp removido com sucesso!</b>"
+
+
+# ────────────────────────────────────────────────
+# 💠 12. RECARREGAR SALDO (PIX RÁPIDO)
+# ────────────────────────────────────────────────
+def topup_menu_text() -> str:
+    return (
+        "💠 Opte por <b>PIX Rápido</b> para que seu saldo seja creditado imediatamente.\n"
+        "💰 Selecione uma opção para recarregar:"
+    )
+
+
+def topup_value_prompt_text() -> str:
+    return (
+        "ℹ️ <b>Informe o valor que deseja recarregar:</b>\n"
+        "🔻 Recarga mínima: <b>R$ 4,00</b>\n\n"
+        "⚠️ Por favor, envie o valor que deseja recarregar agora.\n"
+        "Ao realizar um depósito você declara ter lido e estar de acordo com nossos /termos\n\n"
+        "🎁 Bônus de recarga: <b>10%</b>\n"
+        "❗ Recarga mínima para ganhar o bônus: <b>R$ 10,00</b>"
+    )
+
+
+def topup_invalid_value_text() -> str:
+    return (
+        "❌ <b>Valor inválido!</b>\n\n"
+        "Envie um número maior ou igual a <b>R$ 4,00</b>.\n"
+        "Exemplo: <code>20</code> ou <code>20,00</code>"
+    )
+
+
+def topup_pix_caption(pix_id: str, valor: float, bonus: float, saldo_atual: float, saldo_futuro: float, expira: str) -> str:
+    bonus_line = (
+        f"🎁 Bônus: <b>R$ {bonus:.2f}</b>\n" if bonus > 0 else ""
+    )
+    return (
+        "💠 <b>PIX de recarga gerado!</b>\n\n"
+        f"💰 Valor: <b>R$ {valor:.2f}</b>\n"
+        f"{bonus_line}"
+        f"💼 Saldo atual: <b>R$ {saldo_atual:.2f}</b>\n"
+        f"💸 Saldo após o pagamento: <b>R$ {saldo_futuro:.2f}</b>\n"
+        f"🎫 ID: <code>{pix_id}</code>\n"
+        f"⏰ Expira em: <b>{expira}</b>\n\n"
+        "Escaneie o QR Code ou use o botão <b>📋 Copiar PIX</b>."
+    )
+
+
+def topup_success_text(valor: float, bonus: float, novo_saldo: float) -> str:
+    bonus_line = f"🎁 Bônus aplicado: <b>R$ {bonus:.2f}</b>\n" if bonus > 0 else ""
+    return (
+        "✅ <b>Recarga realizada com sucesso!</b>\n\n"
+        f"💰 Valor creditado: <b>R$ {valor + bonus:.2f}</b>\n"
+        f"{bonus_line}"
+        f"💼 Novo saldo: <b>R$ {novo_saldo:.2f}</b>"
+    )
+
+
+def topup_cancelled_text() -> str:
+    return "❌ <b>Recarga cancelada.</b>"
