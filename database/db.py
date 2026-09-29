@@ -147,6 +147,9 @@ async def init_db():
     await _try_alter("ALTER TABLE users ADD COLUMN pix_name TEXT")
     await _try_alter("ALTER TABLE users ADD COLUMN pix_bank TEXT")
 
+    # ─── Coluna nova em products (imagem/thumb pra inline e banners)
+    await _try_alter("ALTER TABLE products ADD COLUMN image_url TEXT")
+
 
 # ═══════════════════════════════════════════════
 # USERS
@@ -300,11 +303,27 @@ async def decrement_stock(pid: int, qty: int):
     await _db.commit()
 
 
-async def add_product(name, description, price, stock, emoji="📦", activate_url="https://t.me/"):
+async def increment_stock(pid: int, qty: int):
     await _db.execute(
-        "INSERT INTO products (name, description, price, stock, emoji, activate_url) "
-        "VALUES (?, ?, ?, ?, ?, ?)",
-        (name, description, price, stock, emoji, activate_url),
+        "UPDATE products SET stock = stock + ? WHERE id = ?",
+        (qty, pid),
+    )
+    await _db.commit()
+
+
+async def add_product(name, description, price, stock, emoji="📦", activate_url="https://t.me/", image_url=None):
+    await _db.execute(
+        "INSERT INTO products (name, description, price, stock, emoji, activate_url, image_url) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?)",
+        (name, description, price, stock, emoji, activate_url, image_url),
+    )
+    await _db.commit()
+
+
+async def set_product_image(pid: int, image_url: str):
+    await _db.execute(
+        "UPDATE products SET image_url = ? WHERE id = ?",
+        (image_url, pid),
     )
     await _db.commit()
 
@@ -327,6 +346,23 @@ async def take_stock_items(product_id: int, qty: int):
         )
         await _db.commit()
     return items
+
+
+async def add_stock_item(product_id: int, email: str, password: str):
+    await _db.execute(
+        "INSERT INTO stock_items (product_id, email, password) VALUES (?, ?, ?)",
+        (product_id, email, password),
+    )
+    await _db.commit()
+
+
+async def list_available_stock(product_id: int):
+    """Lista itens de estoque ainda não usados."""
+    cur = await _db.execute(
+        "SELECT * FROM stock_items WHERE product_id = ? AND used = 0 ORDER BY id ASC",
+        (product_id,),
+    )
+    return [dict(r) for r in await cur.fetchall()]
 
 
 # ═══════════════════════════════════════════════
