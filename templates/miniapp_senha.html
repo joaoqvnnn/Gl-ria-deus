@@ -1,0 +1,1155 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="format-detection" content="telephone=no">
+<title>Criar Senha para Saque</title>
+<style>
+  :root {
+    --bg: #ffffff; --bg-elev: #ffffff; --text: #111827; --text-sec: #4b5563;
+    --text-muted: #6b7280; --text-placeholder: #9ca3af; --border: #d1d5db;
+    --border-focus: #111827; --btn-bg: #111827; --btn-bg-hover: #1f2937;
+    --btn-text: #ffffff; --btn-disabled-bg: #d1d5db; --btn-disabled-text: #9ca3af;
+    --strength-bar-bg: #e5e7eb; --success-bg: #f0fdf4; --success-border: #16a34a;
+    --success-text: #16a34a; --error-bg: #fef2f2; --error-border: #dc2626;
+    --error-text: #dc2626; --aviso-bg: #fffbeb; --aviso-border: #fcd34d;
+    --aviso-left: #f59e0b; --aviso-text: #78350f; --aviso-strong: #92400e;
+    --aviso-icone: #f59e0b; --badge-bg: #f0fdf4; --badge-text: #16a34a;
+    --shadow: rgba(0,0,0,0.08); --switch-track: #e5e7eb; --switch-thumb: #ffffff;
+    --switch-thumb-icon: #111827; --switch-thumb-shadow: rgba(0,0,0,0.15);
+    --checkbox-border: #d1d5db; --checkbox-bg: #ffffff; --container-w: 100%;
+  }
+  html[data-tema="escuro"] {
+    --bg: #000000; --bg-elev: #111111; --text: #f5f5f5; --text-sec: #d4d4d4;
+    --text-muted: #a3a3a3; --text-placeholder: #6b7280; --border: #262626;
+    --border-focus: #f5f5f5; --btn-bg: #f5f5f5; --btn-bg-hover: #d4d4d4;
+    --btn-text: #000000; --btn-disabled-bg: #262626; --btn-disabled-text: #6b7280;
+    --strength-bar-bg: #262626; --success-bg: #031a0c; --success-border: #22c55e;
+    --success-text: #4ade80; --error-bg: #2a0606; --error-border: #ef4444;
+    --error-text: #fca5a5; --aviso-bg: #1c1400; --aviso-border: #422006;
+    --aviso-left: #f59e0b; --aviso-text: #fde68a; --aviso-strong: #fcd34d;
+    --aviso-icone: #fbbf24; --badge-bg: #031a0c; --badge-text: #4ade80;
+    --shadow: rgba(0,0,0,0.5); --switch-track: #262626; --switch-thumb: #000000;
+    --switch-thumb-icon: #f5f5f5; --switch-thumb-shadow: rgba(255,255,255,0.1);
+    --checkbox-border: #404040; --checkbox-bg: #111111;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
+  html, body {
+    width: 100%; min-height: 100vh; background: var(--bg);
+    transition: background .3s, color .3s; touch-action: pan-x pan-y;
+    -webkit-text-size-adjust: 100%; -webkit-tap-highlight-color: transparent;
+    overscroll-behavior: none;
+  }
+  html { -webkit-touch-callout: none; overscroll-behavior-y: none; }
+  input, textarea, select, button { font-size: 16px; touch-action: manipulation; }
+  body { display: flex; flex-direction: column; color: var(--text); padding: 24px; }
+  .hidden { display: none !important; }
+
+  .theme-switch {
+    position: fixed; top: 18px; right: 18px; z-index: 50; width: 60px; height: 32px;
+    border-radius: 16px; background: var(--switch-track); border: none; cursor: pointer;
+    padding: 0; transition: background .3s; box-shadow: 0 2px 10px var(--shadow);
+  }
+  .theme-switch:active .switch-thumb { width: 30px; }
+  .switch-thumb {
+    position: absolute; top: 3px; left: 3px; width: 26px; height: 26px;
+    border-radius: 50%; background: var(--switch-thumb); display: flex;
+    align-items: center; justify-content: center; color: var(--switch-thumb-icon);
+    transition: transform .3s cubic-bezier(0.4,0,0.2,1), background .3s, color .3s, width .2s;
+    box-shadow: 0 2px 6px var(--switch-thumb-shadow);
+  }
+  html[data-tema="escuro"] .switch-thumb { transform: translateX(28px); }
+  .switch-thumb svg { width: 14px; height: 14px; stroke: currentColor; fill: none; stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; }
+  .switch-thumb .icon-sun { display: block; }
+  .switch-thumb .icon-moon { display: none; }
+  html[data-tema="escuro"] .switch-thumb .icon-sun { display: none; }
+  html[data-tema="escuro"] .switch-thumb .icon-moon { display: block; }
+
+  .main-content { flex: 1; display: flex; flex-direction: column; justify-content: center; width: 100%; max-width: 400px; margin: 0 auto; padding-top: 40px; }
+  .back-link { display: inline-flex; align-items: center; gap: 6px; font-size: 14px; font-weight: 500; color: var(--text-muted); cursor: pointer; margin-bottom: 26px; align-self: flex-start; background: none; border: none; padding: 0; transition: color .2s; }
+  .back-link:hover { color: var(--text); }
+  .back-link svg { width: 16px; height: 16px; stroke: currentColor; fill: none; stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; }
+  .header { text-align: center; margin-bottom: 36px; }
+  .header svg { width: 32px; height: 32px; color: var(--text); margin-bottom: 12px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+  .header h1 { font-size: 22px; font-weight: 700; color: var(--text); line-height: 1.3; }
+  .screen-title { font-size: 22px; font-weight: 700; color: var(--text); margin-bottom: 8px; line-height: 1.3; }
+  .screen-sub { font-size: 14px; color: var(--text-muted); line-height: 1.5; margin-bottom: 28px; }
+  .screen-sub strong { color: var(--text); word-break: break-all; }
+
+  .aviso-spam { display: flex; align-items: flex-start; gap: 10px; background: var(--aviso-bg); border: 1px solid var(--aviso-border); border-left: 4px solid var(--aviso-left); border-radius: 10px; padding: 14px 16px; margin-bottom: 26px; font-size: 13.5px; color: var(--aviso-text); line-height: 1.55; }
+  .aviso-spam .icone { flex-shrink: 0; width: 20px; height: 20px; color: var(--aviso-icone); stroke: currentColor; fill: none; stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; margin-top: 1px; }
+  .aviso-spam strong { color: var(--aviso-strong); font-weight: 700; }
+  .aviso-spam .asterisco { color: #dc2626; font-weight: 700; font-size: 15px; }
+  html[data-tema="escuro"] .aviso-spam .asterisco { color: #f87171; }
+
+  .field { margin-bottom: 20px; }
+  .field label { font-size: 14px; color: var(--text-sec); display: block; margin-bottom: 8px; font-weight: 500; }
+  .input-wrapper { position: relative; width: 100%; }
+  .input-wrapper input.input-normal { width: 100%; padding: 16px; background: var(--bg-elev); border: 1px solid var(--border); border-radius: 10px; color: var(--text); font-size: 16px; outline: none; transition: border .2s, background .3s, color .3s; }
+  .input-wrapper input.input-normal:focus { border-color: var(--border-focus); }
+  .input-wrapper input.input-normal::placeholder { color: var(--text-placeholder); }
+
+  .email-suggestions { position: absolute; top: calc(100% + 4px); left: 0; right: 0; background: var(--bg-elev); border: 1px solid var(--border); border-radius: 10px; box-shadow: 0 8px 24px rgba(0,0,0,0.08); z-index: 100; max-height: 220px; overflow-y: auto; display: none; animation: fadeUp .15s ease; }
+  html[data-tema="escuro"] .email-suggestions { box-shadow: 0 8px 24px rgba(0,0,0,0.5); }
+  .email-suggestions.show { display: block; }
+  @keyframes fadeUp { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: translateY(0); } }
+  .email-suggestion-item { padding: 12px 16px; font-size: 15px; color: var(--text); cursor: pointer; display: flex; align-items: center; gap: 10px; transition: background .15s; border-bottom: 1px solid var(--border); }
+  .email-suggestion-item:last-child { border-bottom: none; }
+  .email-suggestion-item:hover, .email-suggestion-item:active { background: rgba(127,127,127,.08); }
+  .email-suggestion-item svg { width: 16px; height: 16px; stroke: var(--text-muted); fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; flex-shrink: 0; }
+
+  .senha-real { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; z-index: 2; border: none; background: transparent; color: transparent; caret-color: transparent; font-size: 16px; padding: 16px; outline: none; cursor: text; -webkit-text-fill-color: transparent; }
+  .senha-mask { width: 100%; min-height: 54px; padding: 16px 50px 16px 16px; background: var(--bg-elev); border: 1px solid var(--border); border-radius: 10px; color: var(--text); font-size: 16px; display: flex; align-items: center; transition: border .2s, background .3s, color .3s; cursor: text; overflow: hidden; white-space: nowrap; }
+  .senha-wrapper:focus-within .senha-mask { border-color: var(--border-focus); }
+  .senha-placeholder { color: var(--text-placeholder); }
+  .senha-texto { font-weight: 700; font-size: 22px; line-height: 1; color: var(--text); letter-spacing: 4px; margin-right: -4px; padding-bottom: 4px; }
+  .senha-texto.revelada { letter-spacing: 3px; font-size: 17px; margin-right: 0; padding-bottom: 0; }
+  .toggle-eye { position: absolute; top: 50%; right: 14px; transform: translateY(-50%); background: transparent; border: none; cursor: pointer; padding: 4px; display: flex; align-items: center; justify-content: center; color: var(--text-placeholder); transition: color .2s; z-index: 3; }
+  .toggle-eye:hover { color: var(--text); }
+  .toggle-eye svg { width: 20px; height: 20px; stroke: currentColor; fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+
+  .hint { font-size: 12px; color: var(--text-placeholder); margin-top: 8px; line-height: 1.4; }
+  .erro-texto { font-size: 12px; color: var(--error-border); margin-top: 8px; font-weight: 500; min-height: 16px; }
+  .strength-segments { display: flex; gap: 6px; margin-top: 10px; }
+  .strength-segment { flex: 1; height: 4px; border-radius: 2px; background: var(--strength-bar-bg); transition: background .3s; }
+  .strength-segment.on-vermelho { background: #dc2626; }
+  .strength-segment.on-laranja  { background: #f97316; }
+  .strength-segment.on-verde    { background: #16a34a; }
+  .strength-text { font-size: 12px; margin-top: 6px; min-height: 16px; color: var(--text-placeholder); font-weight: 500; }
+  .match-text { font-size: 12px; margin-top: 6px; min-height: 16px; font-weight: 500; }
+  .match-ok { color: var(--success-text); }
+  .match-no { color: var(--error-border); }
+
+  .termos-box { display: flex; align-items: flex-start; gap: 12px; margin-top: 6px; margin-bottom: 6px; padding: 14px; border: 1px solid var(--border); border-radius: 10px; background: var(--bg-elev); transition: border-color .25s, background .3s; cursor: pointer; }
+  .termos-box.marcado { border-color: var(--text); }
+  .termos-box.erro { border-color: var(--error-border); animation: shakeTudo2 .4s; }
+  @keyframes shakeTudo2 { 0%, 100% { transform: translateX(0); } 25% { transform: translateX(-4px); } 75% { transform: translateX(4px); } }
+  .checkbox-custom { flex-shrink: 0; width: 22px; height: 22px; border: 2px solid var(--checkbox-border); border-radius: 6px; background: var(--checkbox-bg); display: flex; align-items: center; justify-content: center; transition: all .2s; margin-top: 1px; }
+  .checkbox-custom svg { width: 14px; height: 14px; stroke: #ffffff; fill: none; stroke-width: 3; stroke-linecap: round; stroke-linejoin: round; opacity: 0; transform: scale(0.5); transition: opacity .2s, transform .2s; }
+  .termos-box.marcado .checkbox-custom { background: var(--text); border-color: var(--text); }
+  .termos-box.marcado .checkbox-custom svg { opacity: 1; transform: scale(1); }
+  .termos-texto { font-size: 13.5px; color: var(--text-sec); line-height: 1.55; user-select: none; }
+  .termos-texto strong { color: var(--text); font-weight: 600; }
+  .termos-texto .link-termo { color: var(--text); font-weight: 700; text-decoration: underline; cursor: pointer; background: none; border: none; padding: 0; font-size: inherit; font-family: inherit; }
+  .termos-texto .link-termo:hover { color: var(--text-sec); }
+
+  .btn { width: 100%; padding: 16px; margin-top: 12px; background: var(--btn-bg); color: var(--btn-text); border: none; border-radius: 10px; font-size: 16px; font-weight: 600; cursor: pointer; transition: background .2s, transform .1s, color .3s; }
+  .btn:hover { background: var(--btn-bg-hover); }
+  .btn:active { transform: scale(0.98); }
+  .btn:disabled { background: var(--btn-disabled-bg); color: var(--btn-disabled-text); cursor: not-allowed; }
+  .forgot-link { display: block; text-align: center; margin-top: 20px; font-size: 14px; color: var(--text-muted); text-decoration: none; font-weight: 500; cursor: pointer; background: none; border: none; width: 100%; padding: 0; }
+  .forgot-link:hover { color: var(--text); text-decoration: underline; }
+
+  .code-inputs { display: flex; gap: 8px; justify-content: space-between; margin-bottom: 4px; }
+  .code-inputs input { width: 100%; height: 58px; text-align: center; font-size: 22px; font-weight: 700; color: var(--text); background: var(--bg-elev); border: 1px solid var(--border); border-radius: 10px; outline: none; transition: border .25s, background .25s, color .25s, box-shadow .25s, transform .1s; }
+  .code-inputs input:focus { border-color: var(--border-focus); box-shadow: 0 0 0 3px rgba(127,127,127,.15); }
+  .code-inputs input.filled { border-color: var(--border-focus); }
+  .code-inputs input.sucesso { border-color: var(--success-border) !important; background: var(--success-bg); color: var(--success-text); box-shadow: 0 0 0 3px rgba(22,163,74,.15); animation: pulseOk .4s ease; }
+  @keyframes pulseOk { 0% { transform: scale(1); } 50% { transform: scale(1.06); } 100% { transform: scale(1); } }
+  .code-inputs input.erro { border-color: var(--error-border) !important; background: var(--error-bg); color: var(--error-text); box-shadow: 0 0 0 3px rgba(220,38,38,.15); }
+  .code-inputs.tremendo { animation: shakeTudo .45s cubic-bezier(.36,.07,.19,.97); }
+  @keyframes shakeTudo { 0%, 100% { transform: translateX(0); } 15% { transform: translateX(-8px); } 30% { transform: translateX(8px); } 45% { transform: translateX(-6px); } 60% { transform: translateX(6px); } 75% { transform: translateX(-3px); } 90% { transform: translateX(3px); } }
+  .code-inputs.travado input { pointer-events: none; }
+  .code-info { display: flex; justify-content: space-between; align-items: center; margin-top: 12px; font-size: 12px; color: var(--text-placeholder); gap: 10px; }
+  .resend-btn { background: none; border: none; font-size: 13px; font-weight: 600; color: var(--text); cursor: pointer; padding: 0; white-space: nowrap; }
+  .resend-btn:disabled { color: var(--text-placeholder); cursor: not-allowed; }
+  .resend-btn:not(:disabled):hover { text-decoration: underline; }
+  .status-codigo { text-align: center; font-size: 13px; font-weight: 600; margin-top: 16px; min-height: 0; }
+  .status-codigo:empty { display: none; }
+  .status-codigo.erro { color: var(--error-border); }
+
+  .termos-content { flex: 1; display: flex; flex-direction: column; width: 100%; max-width: 400px; margin: 0 auto; padding-top: 20px; padding-bottom: 20px; }
+  .termos-titulo { font-size: 20px; font-weight: 700; color: var(--text); text-align: center; margin-bottom: 6px; line-height: 1.3; }
+  .termos-subtitulo { font-size: 12px; color: var(--text-placeholder); text-align: center; margin-bottom: 24px; }
+  .termos-scroll { flex: 1; overflow-y: auto; padding: 20px; background: var(--bg-elev); border: 1px solid var(--border); border-radius: 12px; max-height: 55vh; line-height: 1.7; font-size: 13.5px; color: var(--text-sec); scrollbar-width: thin; scrollbar-color: var(--border) transparent; }
+  .termos-scroll::-webkit-scrollbar { width: 6px; }
+  .termos-scroll::-webkit-scrollbar-track { background: transparent; }
+  .termos-scroll::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+  .termos-scroll h3 { font-size: 13.5px; font-weight: 800; color: var(--text); margin-top: 20px; margin-bottom: 10px; text-transform: uppercase; letter-spacing: 0.4px; }
+  .termos-scroll h3:first-child { margin-top: 0; }
+  .termos-scroll p { margin-bottom: 12px; text-align: justify; }
+  .termos-scroll ul { list-style: none; padding-left: 0; margin-bottom: 12px; }
+  .termos-scroll ul li { position: relative; padding-left: 18px; margin-bottom: 6px; text-align: justify; }
+  .termos-scroll ul li::before { content: "§"; position: absolute; left: 0; color: var(--text-muted); font-weight: 700; }
+  .termos-scroll .destaque { color: var(--text); font-weight: 700; }
+  .termos-rodape { margin-top: 20px; padding-top: 16px; border-top: 1px solid var(--border); font-size: 11.5px; color: var(--text-placeholder); text-align: center; line-height: 1.6; }
+  .termos-acoes { display: flex; gap: 10px; margin-top: 20px; }
+  .btn-secundario { flex: 1; padding: 14px; background: transparent; color: var(--text); border: 1.5px solid var(--border); border-radius: 10px; font-size: 15px; font-weight: 600; cursor: pointer; transition: background .2s, border-color .2s; }
+  .btn-secundario:hover { background: var(--bg-elev); border-color: var(--text-muted); }
+  .btn-primario-mini { flex: 1; padding: 14px; background: var(--btn-bg); color: var(--btn-text); border: none; border-radius: 10px; font-size: 15px; font-weight: 600; cursor: pointer; transition: background .2s, transform .1s; }
+  .btn-primario-mini:hover { background: var(--btn-bg-hover); }
+  .btn-primario-mini:active { transform: scale(0.98); }
+
+  .footer { width: 100%; max-width: 400px; margin: 0 auto; padding-top: 40px; padding-bottom: 20px; text-align: center; color: var(--text-placeholder); font-size: 12px; }
+  .footer .store-info { display: flex; align-items: center; justify-content: center; gap: 6px; font-weight: 600; color: var(--text-sec); font-size: 15px; margin-bottom: 4px; }
+  .footer .store-info svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+  .footer .cnpj { margin-bottom: 16px; font-size: 12px; }
+  .footer .secure-badge { display: inline-flex; align-items: center; gap: 6px; background: var(--badge-bg); color: var(--badge-text); padding: 8px 14px; border-radius: 20px; font-weight: 600; font-size: 12px; }
+  .footer .secure-badge svg { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+
+  .success-screen { display: none; flex: 1; flex-direction: column; align-items: center; justify-content: center; width: 100%; max-width: 400px; margin: 0 auto; text-align: center; }
+  .success-screen.active { display: flex; }
+  .success-icon { width: 96px; height: 96px; border-radius: 50%; background: var(--success-bg); display: flex; align-items: center; justify-content: center; margin-bottom: 28px; animation: popIn .4s cubic-bezier(0.175,0.885,0.32,1.275); }
+  .success-icon svg { width: 48px; height: 48px; color: var(--success-border); stroke-width: 2.5; fill: none; stroke: currentColor; stroke-linecap: round; stroke-linejoin: round; }
+  @keyframes popIn { 0% { transform: scale(0.5); opacity: 0; } 100% { transform: scale(1); opacity: 1; } }
+  .success-screen h2 { font-size: 24px; font-weight: 700; color: var(--text); margin-bottom: 10px; }
+  .success-screen p { font-size: 14px; color: var(--text-muted); line-height: 1.5; margin-bottom: 32px; max-width: 300px; }
+  .success-screen .btn { max-width: 300px; }
+  .btn .btn-spinner { display: inline-block; width: 16px; height: 16px; border: 2px solid currentColor; border-top-color: transparent; border-radius: 50%; animation: btnSpin .7s linear infinite; vertical-align: middle; margin-right: 8px; }
+  @keyframes btnSpin { to { transform: rotate(360deg); } }
+
+  @media (min-width: 600px) {
+    body { padding: 40px 32px; background: #f4f4f6; align-items: center; }
+    html[data-tema="escuro"] body { background: #0a0a0a; }
+    .main-content, .termos-content, .success-screen, .footer { max-width: 500px; background: var(--bg); border-radius: 24px; box-shadow: 0 4px 24px rgba(0,0,0,0.06); padding: 48px 44px; }
+    html[data-tema="escuro"] .main-content, html[data-tema="escuro"] .termos-content, html[data-tema="escuro"] .success-screen, html[data-tema="escuro"] .footer { box-shadow: 0 4px 24px rgba(0,0,0,0.4); }
+    .footer { padding: 32px 44px 40px; margin-top: 24px; }
+    .termos-content { padding: 32px 44px; }
+    .header h1 { font-size: 26px; }
+    .screen-title { font-size: 24px; }
+    .success-screen h2 { font-size: 28px; }
+    .success-screen p { font-size: 15px; max-width: 360px; }
+    .termos-scroll { max-height: 60vh; font-size: 14px; }
+    .code-inputs input { height: 64px; font-size: 24px; }
+    .senha-mask { min-height: 58px; }
+    .input-wrapper input.input-normal { padding: 18px; }
+    .btn { padding: 18px; font-size: 16.5px; }
+  }
+  @media (min-width: 900px) {
+    body { padding: 60px 40px; }
+    .main-content, .termos-content, .success-screen, .footer { max-width: 560px; padding: 56px 56px; }
+    .footer { padding: 36px 56px 44px; }
+    .termos-content { padding: 40px 56px; }
+    .header { margin-bottom: 44px; }
+    .header svg { width: 38px; height: 38px; margin-bottom: 16px; }
+    .header h1 { font-size: 28px; }
+    .screen-title { font-size: 26px; }
+    .screen-sub { font-size: 15px; margin-bottom: 32px; }
+    .field { margin-bottom: 24px; }
+    .code-inputs { gap: 12px; }
+    .code-inputs input { height: 68px; font-size: 26px; }
+    .termos-scroll { max-height: 65vh; font-size: 14.5px; padding: 32px; }
+    .termos-titulo { font-size: 24px; }
+    .termos-subtitulo { font-size: 13px; }
+    .success-screen h2 { font-size: 32px; }
+    .success-screen p { font-size: 15.5px; max-width: 400px; }
+    .success-icon { width: 112px; height: 112px; margin-bottom: 32px; }
+    .success-icon svg { width: 56px; height: 56px; }
+    .theme-switch { top: 28px; right: 28px; }
+  }
+  @media (min-width: 1200px) {
+    .main-content, .termos-content, .success-screen, .footer { max-width: 600px; }
+    .main-content { padding: 64px; }
+    .termos-content { padding: 48px 64px; }
+  }
+</style>
+</head>
+<body>
+
+  <button class="theme-switch" id="themeToggle" onclick="alternarTema()" aria-label="Alternar tema">
+    <span class="switch-thumb">
+      <svg class="icon-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><line x1="12" y1="2" x2="12" y2="4"/><line x1="12" y1="20" x2="12" y2="22"/><line x1="4.93" y1="4.93" x2="6.34" y2="6.34"/><line x1="17.66" y1="17.66" x2="19.07" y2="19.07"/><line x1="2" y1="12" x2="4" y2="12"/><line x1="20" y1="12" x2="22" y2="12"/><line x1="4.93" y1="19.07" x2="6.34" y2="17.66"/><line x1="17.66" y1="6.34" x2="19.07" y2="4.93"/></svg>
+      <svg class="icon-moon" viewBox="0 0 24 24"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+    </span>
+  </button>
+
+  <div class="main-content" id="formScreen">
+    <div class="header">
+      <svg viewBox="0 0 24 24"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+      <h1>Criar Senha para Saque</h1>
+    </div>
+
+    <div class="field">
+      <label>Criar senha</label>
+      <div class="input-wrapper senha-wrapper">
+        <input type="text" id="senha1" class="senha-real" inputmode="numeric" pattern="[0-9]*" autocomplete="off" maxlength="6">
+        <div class="senha-mask" onclick="focarSenha('senha1')">
+          <span class="senha-placeholder">Digite a senha</span>
+          <span class="senha-texto" id="senha1-texto"></span>
+        </div>
+        <button type="button" class="toggle-eye" tabindex="-1" onmousedown="event.preventDefault()" onclick="toggleSenha('senha1', this)" aria-label="Mostrar senha"><svg viewBox="0 0 24 24"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg></button>
+      </div>
+      <div class="strength-segments" id="segments1"><div class="strength-segment"></div><div class="strength-segment"></div><div class="strength-segment"></div></div>
+      <div class="strength-text" id="strengthText"></div>
+      <div class="hint">Apenas números (4 a 6 dígitos).</div>
+      <div class="erro-texto" id="erroSenha"></div>
+    </div>
+
+    <div class="field">
+      <label>Repetir senha</label>
+      <div class="input-wrapper senha-wrapper">
+        <input type="text" id="senha2" class="senha-real" inputmode="numeric" pattern="[0-9]*" autocomplete="off" maxlength="6">
+        <div class="senha-mask" onclick="focarSenha('senha2')">
+          <span class="senha-placeholder">Confirme a senha</span>
+          <span class="senha-texto" id="senha2-texto"></span>
+        </div>
+        <button type="button" class="toggle-eye" tabindex="-1" onmousedown="event.preventDefault()" onclick="toggleSenha('senha2', this)" aria-label="Mostrar senha"><svg viewBox="0 0 24 24"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg></button>
+      </div>
+      <div class="match-text" id="matchText"></div>
+    </div>
+
+    <div class="field">
+      <label>E-mail para recuperação</label>
+      <div class="input-wrapper">
+        <input type="email" id="email" class="input-normal" placeholder="seu@email.com" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" oninput="onEmailInput()" onfocus="onEmailFocus()" onblur="onEmailBlur()">
+        <div class="email-suggestions" id="emailSuggestions"></div>
+      </div>
+      <div class="hint">Usaremos este e-mail caso você esqueça a senha.</div>
+      <div class="erro-texto" id="erroEmailForm"></div>
+    </div>
+
+    <div class="termos-box" id="termosBox" onclick="toggleTermos()">
+      <div class="checkbox-custom"><svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg></div>
+      <div class="termos-texto">
+        Li e concordo com os
+        <button type="button" class="link-termo" onclick="event.stopPropagation(); abrirTermos()">Termos de Uso</button>
+        e a
+        <button type="button" class="link-termo" onclick="event.stopPropagation(); abrirTermos()">Política de Privacidade</button>.
+      </div>
+    </div>
+    <div class="erro-texto" id="erroTermos" style="margin-top: 4px; margin-bottom: 8px;"></div>
+
+    <button class="btn" id="btnSalvar" onclick="salvarSenha()">Salvar senha</button>
+    <button class="forgot-link" onclick="esqueceuSenha()">Esqueceu a senha?</button>
+  </div>
+
+  <div class="main-content hidden" id="confirmEmailScreen">
+    <button class="back-link" onclick="voltarParaForm()"><svg viewBox="0 0 24 24"><polyline points="15 18 9 12 15 6"/></svg> Voltar</button>
+    <h2 class="screen-title">Confirme seu e-mail</h2>
+    <p class="screen-sub">Enviamos um código de 6 dígitos para <strong id="confirmEmailMostrado">seu@email.com</strong>. Confirme para garantir que o e-mail é realmente seu.</p>
+    <div class="aviso-spam">
+      <svg class="icone" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+      <div><span class="asterisco">*</span> <strong>Não encontrou o e-mail?</strong><br>Confira também a sua caixa de <strong>SPAM</strong> ou <strong>Lixo Eletrônico</strong>.</div>
+    </div>
+    <div class="code-inputs" id="confirmCodeInputsWrap">
+      <input type="text" inputmode="numeric" maxlength="1" autocomplete="one-time-code">
+      <input type="text" inputmode="numeric" maxlength="1"><input type="text" inputmode="numeric" maxlength="1">
+      <input type="text" inputmode="numeric" maxlength="1"><input type="text" inputmode="numeric" maxlength="1">
+      <input type="text" inputmode="numeric" maxlength="1">
+    </div>
+    <div class="code-info">
+      <span id="confirmExpiraTexto">Expira em 5:00</span>
+      <button class="resend-btn" id="confirmResendBtn" onclick="reenviarCodigoEmail()">Reenviar código</button>
+    </div>
+    <div class="status-codigo" id="confirmStatusCodigo"></div>
+  </div>
+
+  <div class="success-screen" id="successScreen">
+    <div class="success-icon"><svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg></div>
+    <h2 id="successTitle">Senha configurada</h2>
+    <p id="successText">Sua senha para saque foi criada com sucesso e está pronta para uso.</p>
+    <button class="btn" onclick="voltarInicio()">Voltar ao início</button>
+  </div>
+
+  <div class="main-content hidden" id="forgotScreen">
+    <button class="back-link" onclick="mostrarTela('formScreen')"><svg viewBox="0 0 24 24"><polyline points="15 18 9 12 15 6"/></svg> Voltar</button>
+    <h2 class="screen-title">Recuperar senha</h2>
+    <p class="screen-sub">Digite o e-mail cadastrado. Enviaremos um código de 6 dígitos para você criar uma nova senha.</p>
+    <div class="field">
+      <label>E-mail cadastrado</label>
+      <div class="input-wrapper">
+        <input type="email" id="emailRecuperacao" class="input-normal" placeholder="seu@email.com" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" oninput="onEmailRecInput()" onfocus="onEmailRecFocus()" onblur="onEmailRecBlur()">
+        <div class="email-suggestions" id="emailSuggestionsRec"></div>
+      </div>
+      <div class="erro-texto" id="erroEmail"></div>
+    </div>
+    <button class="btn" id="btnEnviarCodigo" onclick="enviarCodigo()">Enviar código</button>
+  </div>
+
+  <div class="main-content hidden" id="codeScreen">
+    <button class="back-link" onclick="voltarParaEmail()"><svg viewBox="0 0 24 24"><polyline points="15 18 9 12 15 6"/></svg> Voltar</button>
+    <h2 class="screen-title">Digite o código</h2>
+    <p class="screen-sub">Enviamos um código de 6 dígitos para <strong id="codigoEmail">seu@email.com</strong>.</p>
+    <div class="aviso-spam">
+      <svg class="icone" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+      <div><span class="asterisco">*</span> <strong>Não encontrou o e-mail?</strong><br>Confira também a sua caixa de <strong>SPAM</strong> ou <strong>Lixo Eletrônico</strong>.</div>
+    </div>
+    <div class="code-inputs" id="codeInputsWrap">
+      <input type="text" inputmode="numeric" maxlength="1" autocomplete="one-time-code">
+      <input type="text" inputmode="numeric" maxlength="1"><input type="text" inputmode="numeric" maxlength="1">
+      <input type="text" inputmode="numeric" maxlength="1"><input type="text" inputmode="numeric" maxlength="1">
+      <input type="text" inputmode="numeric" maxlength="1">
+    </div>
+    <div class="code-info">
+      <span id="expiraTexto">Expira em 5:00</span>
+      <button class="resend-btn" id="resendBtn" onclick="reenviarCodigo()">Reenviar código</button>
+    </div>
+    <div class="status-codigo" id="statusCodigo"></div>
+  </div>
+
+  <div class="main-content hidden" id="newPassScreen">
+    <button class="back-link" onclick="mostrarTela('codeScreen')"><svg viewBox="0 0 24 24"><polyline points="15 18 9 12 15 6"/></svg> Voltar</button>
+    <h2 class="screen-title">Criar nova senha</h2>
+    <p class="screen-sub">Código confirmado! Agora defina sua nova senha de saque.</p>
+    <div class="field">
+      <label>Nova senha</label>
+      <div class="input-wrapper senha-wrapper">
+        <input type="text" id="novaSenha1" class="senha-real" inputmode="numeric" pattern="[0-9]*" autocomplete="off" maxlength="6">
+        <div class="senha-mask" onclick="focarSenha('novaSenha1')"><span class="senha-placeholder">Digite a nova senha</span><span class="senha-texto" id="novaSenha1-texto"></span></div>
+        <button type="button" class="toggle-eye" tabindex="-1" onmousedown="event.preventDefault()" onclick="toggleSenha('novaSenha1', this)"><svg viewBox="0 0 24 24"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg></button>
+      </div>
+      <div class="strength-segments" id="segments2"><div class="strength-segment"></div><div class="strength-segment"></div><div class="strength-segment"></div></div>
+      <div class="strength-text" id="strengthText2"></div>
+      <div class="hint">Apenas números (4 a 6 dígitos).</div>
+      <div class="erro-texto" id="erroNovaSenha"></div>
+    </div>
+    <div class="field">
+      <label>Repetir nova senha</label>
+      <div class="input-wrapper senha-wrapper">
+        <input type="text" id="novaSenha2" class="senha-real" inputmode="numeric" pattern="[0-9]*" autocomplete="off" maxlength="6">
+        <div class="senha-mask" onclick="focarSenha('novaSenha2')"><span class="senha-placeholder">Confirme a nova senha</span><span class="senha-texto" id="novaSenha2-texto"></span></div>
+        <button type="button" class="toggle-eye" tabindex="-1" onmousedown="event.preventDefault()" onclick="toggleSenha('novaSenha2', this)"><svg viewBox="0 0 24 24"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg></button>
+      </div>
+      <div class="match-text" id="matchText2"></div>
+    </div>
+    <button class="btn" onclick="salvarNovaSenha()">Salvar nova senha</button>
+  </div>
+
+  <div class="termos-content hidden" id="termosScreen">
+    <button class="back-link" onclick="fecharTermos()"><svg viewBox="0 0 24 24"><polyline points="15 18 9 12 15 6"/></svg> Voltar</button>
+    <h2 class="termos-titulo">Termos de Uso e Política de Privacidade</h2>
+    <p class="termos-subtitulo">Última atualização: versão 3.2 — vigente a partir da data de aceite</p>
+    <div class="termos-scroll" id="termosScroll">
+      <h3>Módulo I — Disposições Preliminares</h3>
+      <p><span class="destaque">CLÁUSULA 1ª — DAS PARTES E DO OBJETO.</span> O presente instrumento estabelece os termos e condições de uso aplicáveis à criação e utilização da Senha de Saque disponibilizada pela plataforma <strong>Minha Lojinha</strong>.</p>
+      <p><span class="destaque">CLÁUSULA 2ª — DA ACEITAÇÃO.</span> Ao marcar a caixa de aceite e clicar no botão "Salvar senha", o USUÁRIO declara ter lido, compreendido e aceito integralmente todas as cláusulas deste Termo.</p>
+      <h3>Módulo II — Do Cadastro e da Senha de Saque</h3>
+      <p><span class="destaque">CLÁUSULA 3ª — DA NATUREZA DA SENHA.</span> A Senha de Saque é um código numérico pessoal, composto de 4 (quatro) a 6 (seis) dígitos, de uso estritamente individual e intransferível.</p>
+      <p><span class="destaque">CLÁUSULA 4ª — DA CONFIDENCIALIDADE.</span> O USUÁRIO obriga-se a manter a Senha de Saque sob absoluto sigilo.</p>
+      <p><span class="destaque">CLÁUSULA 5ª — DA RESPONSABILIDADE PELO USO DA SENHA.</span> Toda operação realizada com a Senha de Saque será considerada de responsabilidade exclusiva do USUÁRIO.</p>
+      <h3>Módulo III — Da Recuperação de Senha</h3>
+      <p><span class="destaque">CLÁUSULA 6ª — DO PROCEDIMENTO DE RECUPERAÇÃO.</span> Em caso de esquecimento, o USUÁRIO poderá solicitar a redefinição por meio do e-mail de recuperação previamente cadastrado, mediante envio de código numérico de 6 (seis) dígitos.</p>
+      <p><span class="destaque">CLÁUSULA 7ª — DA VALIDADE DO CÓDIGO.</span> O código de verificação enviado por e-mail possui validade de 5 (cinco) minutos contados a partir do momento de seu envio.</p>
+      <h3>Módulo IV — Da Proteção de Dados Pessoais</h3>
+      <p><span class="destaque">CLÁUSULA 9ª — DO TRATAMENTO DE DADOS.</span> Em conformidade com a Lei Federal nº 13.709/2018 (LGPD), a PLATAFORMA compromete-se a tratar os dados pessoais do USUÁRIO de forma adequada.</p>
+      <p><span class="destaque">CLÁUSULA 12ª — DOS DIREITOS DO TITULAR.</span> O USUÁRIO poderá, a qualquer tempo, exercer os direitos previstos no art. 18 da LGPD.</p>
+      <h3>Módulo V — Das Obrigações e Responsabilidades</h3>
+      <p><span class="destaque">CLÁUSULA 13ª — DAS OBRIGAÇÕES DO USUÁRIO.</span> Compete ao USUÁRIO fornecer informações verdadeiras e comunicar imediatamente à PLATAFORMA qualquer suspeita de uso indevido.</p>
+      <p><span class="destaque">CLÁUSULA 15ª — DA LIMITAÇÃO DE RESPONSABILIDADE.</span> A PLATAFORMA não será responsabilizada por prejuízos decorrentes de uso indevido da senha por culpa do USUÁRIO.</p>
+      <h3>Módulo VI — Das Disposições Finais</h3>
+      <p><span class="destaque">CLÁUSULA 16ª — DA ALTERAÇÃO DOS TERMOS.</span> A PLATAFORMA reserva-se o direito de alterar, a qualquer momento, o conteúdo deste Termo.</p>
+      <p><span class="destaque">CLÁUSULA 20ª — DA LEGISLAÇÃO APLICÁVEL.</span> Este instrumento é regido pelas leis da República Federativa do Brasil, em especial a LGPD e o Marco Civil da Internet.</p>
+      <div class="termos-rodape">Ao prosseguir, você declara ter lido e aceito integralmente os presentes Termos.<br><strong style="color: var(--text);">Minha Lojinha — CNPJ: 00.000.000/0001-00</strong></div>
+    </div>
+    <div class="termos-acoes">
+      <button class="btn-secundario" onclick="fecharTermos()">Fechar</button>
+      <button class="btn-primario-mini" onclick="aceitarEVoltar()">Li e aceito</button>
+    </div>
+  </div>
+
+  <div class="footer">
+    <div class="store-info">
+      <svg viewBox="0 0 24 24"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path><polyline points="9 22 9 12 15 12 15 22"></polyline></svg>
+      <span>Minha Lojinha</span>
+    </div>
+    <div class="cnpj">CNPJ: 00.000.000/0001-00</div>
+    <div class="secure-badge">
+      <svg viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path></svg>
+      <span>Senha criptografada e segura</span>
+    </div>
+  </div>
+
+<script>
+(function bloquearZoom() {
+  ['gesturestart','gesturechange','gestureend'].forEach(evt => {
+    document.addEventListener(evt, e => e.preventDefault(), { passive: false });
+  });
+  let ultimoToque = 0;
+  document.addEventListener('touchend', e => {
+    const agora = Date.now();
+    if (agora - ultimoToque <= 320) e.preventDefault();
+    ultimoToque = agora;
+  }, { passive: false });
+  document.addEventListener('wheel', e => { if (e.ctrlKey) e.preventDefault(); }, { passive: false });
+  document.addEventListener('keydown', e => {
+    if ((e.ctrlKey || e.metaKey) && ['+','-','=','0'].includes(e.key)) e.preventDefault();
+  });
+  document.addEventListener('touchmove', e => {
+    if (e.touches && e.touches.length > 1) e.preventDefault();
+  }, { passive: false });
+  const meta = document.querySelector('meta[name="viewport"]');
+  if (meta) {
+    const travado = 'width=device-width, initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0, user-scalable=no, viewport-fit=cover';
+    const reaplicar = () => { if (meta.getAttribute('content') !== travado) meta.setAttribute('content', travado); };
+    setTimeout(reaplicar, 300); setTimeout(reaplicar, 1200);
+  }
+})();
+
+/* ═══════════════════════════════════════════════
+   CONFIGURAÇÃO
+   ═══════════════════════════════════════════════ */
+const API_URL = '/api/enviar-codigo';
+const USER_ID = '{{ user_id }}';
+
+/* ═══════════════════════════════════════════════
+   TEMA
+   ═══════════════════════════════════════════════ */
+const TEMA_KEY = 'tema_preferido';
+function aplicarTema(tema) {
+  document.documentElement.setAttribute('data-tema', tema);
+  try { localStorage.setItem(TEMA_KEY, tema); } catch(e) {}
+}
+function alternarTema() {
+  const atual = document.documentElement.getAttribute('data-tema') || 'claro';
+  aplicarTema(atual === 'escuro' ? 'claro' : 'escuro');
+}
+function carregarTema() {
+  try { aplicarTema(localStorage.getItem(TEMA_KEY) || 'claro'); } catch(e) { aplicarTema('claro'); }
+}
+
+const STORAGE_KEY = 'senha_saque_afiliado';
+const EMAIL_KEY = 'email_recuperacao_afiliado';
+
+const DOMINIOS_EMAIL = ['gmail.com','hotmail.com','outlook.com','icloud.com','yahoo.com','live.com','bol.com.br','uol.com.br'];
+const SVG_MAIL = `<svg viewBox="0 0 24 24"><rect x="2" y="4" width="20" height="16" rx="2"/><polyline points="2,6 12,13 22,6"/></svg>`;
+
+function mostrarSugestoes(inputEl, containerEl, valor) {
+  const partes = valor.split('@');
+  const usuario = partes[0].trim();
+  if (!usuario || (partes.length > 1 && partes[1].trim().length > 0)) {
+    containerEl.classList.remove('show'); containerEl.innerHTML = ''; return;
+  }
+  containerEl.innerHTML = DOMINIOS_EMAIL.slice(0,6).map(d =>
+    `<div class="email-suggestion-item" data-email="${usuario}@${d}">${SVG_MAIL}<span>${usuario}@<strong>${d}</strong></span></div>`
+  ).join('');
+  containerEl.classList.add('show');
+  containerEl.querySelectorAll('.email-suggestion-item').forEach(el => {
+    el.addEventListener('mousedown', e => {
+      e.preventDefault();
+      inputEl.value = el.dataset.email;
+      containerEl.classList.remove('show'); containerEl.innerHTML = '';
+      inputEl.focus();
+    });
+  });
+}
+function onEmailInput() { mostrarSugestoes(document.getElementById('email'), document.getElementById('emailSuggestions'), document.getElementById('email').value); }
+function onEmailFocus() { const i = document.getElementById('email'); if (i.value.includes('@')) onEmailInput(); }
+function onEmailBlur() { setTimeout(() => { const b = document.getElementById('emailSuggestions'); b.classList.remove('show'); b.innerHTML = ''; }, 150); }
+function onEmailRecInput() { mostrarSugestoes(document.getElementById('emailRecuperacao'), document.getElementById('emailSuggestionsRec'), document.getElementById('emailRecuperacao').value); }
+function onEmailRecFocus() { const i = document.getElementById('emailRecuperacao'); if (i.value.includes('@')) onEmailRecInput(); }
+function onEmailRecBlur() { setTimeout(() => { const b = document.getElementById('emailSuggestionsRec'); b.classList.remove('show'); b.innerHTML = ''; }, 150); }
+
+const TELAS = ['formScreen','confirmEmailScreen','successScreen','forgotScreen','codeScreen','newPassScreen','termosScreen'];
+function mostrarTela(id) {
+  TELAS.forEach(nome => {
+    const el = document.getElementById(nome);
+    if (!el) return;
+    if (nome === 'successScreen') el.classList.toggle('active', nome === id);
+    else el.classList.toggle('hidden', nome !== id);
+  });
+  window.scrollTo(0, 0);
+}
+
+const EYE_OPEN = `<svg viewBox="0 0 24 24"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>`;
+const EYE_CLOSED = `<svg viewBox="0 0 24 24"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>`;
+
+let termosAceitos = false;
+function toggleTermos() {
+  termosAceitos = !termosAceitos;
+  const box = document.getElementById('termosBox');
+  box.classList.toggle('marcado', termosAceitos);
+  if (termosAceitos) { box.classList.remove('erro'); document.getElementById('erroTermos').textContent = ''; }
+}
+function abrirTermos() { mostrarTela('termosScreen'); }
+function fecharTermos() { mostrarTela('formScreen'); }
+function aceitarEVoltar() {
+  termosAceitos = true;
+  const box = document.getElementById('termosBox');
+  box.classList.add('marcado'); box.classList.remove('erro');
+  document.getElementById('erroTermos').textContent = '';
+  mostrarTela('formScreen');
+}
+
+const senhasReveladas = { senha1:false, senha2:false, novaSenha1:false, novaSenha2:false };
+const CAMPOS_SENHA = ['senha1','senha2','novaSenha1','novaSenha2'];
+function focarSenha(id) { document.getElementById(id).focus(); }
+function atualizarMascara(id) {
+  const input = document.getElementById(id);
+  const texto = document.getElementById(id + '-texto');
+  const placeholder = input.parentElement.querySelector('.senha-placeholder');
+  if (!input || !texto || !placeholder) return;
+  if (input.value.length === 0) {
+    placeholder.style.display = 'inline'; texto.textContent = ''; texto.classList.remove('revelada');
+  } else {
+    placeholder.style.display = 'none';
+    if (senhasReveladas[id]) { texto.textContent = input.value; texto.classList.add('revelada'); }
+    else { texto.textContent = '•'.repeat(input.value.length); texto.classList.remove('revelada'); }
+  }
+}
+function toggleSenha(id, btn) {
+  senhasReveladas[id] = !senhasReveladas[id];
+  atualizarMascara(id);
+  btn.innerHTML = senhasReveladas[id] ? EYE_CLOSED : EYE_OPEN;
+}
+function resetarOlhinhos() {
+  CAMPOS_SENHA.forEach(id => { senhasReveladas[id] = false; atualizarMascara(id); });
+  document.querySelectorAll('.toggle-eye').forEach(btn => { btn.innerHTML = EYE_OPEN; });
+}
+function configurarCamposSenha() {
+  CAMPOS_SENHA.forEach(id => {
+    const input = document.getElementById(id);
+    if (!input) return;
+    input.addEventListener('input', () => {
+      input.value = input.value.replace(/\D/g,'').slice(0,6);
+      atualizarMascara(id);
+      if (id === 'senha1' || id === 'senha2') avaliarSenha(); else avaliarSenha2();
+      const erroEl = (id === 'senha1' || id === 'senha2') ? document.getElementById('erroSenha') : document.getElementById('erroNovaSenha');
+      if (erroEl) erroEl.textContent = '';
+    });
+    input.addEventListener('blur', () => atualizarMascara(id));
+  });
+}
+
+function mostrarErroInline(idEl, msg) {
+  const el = document.getElementById(idEl);
+  if (!el) return;
+  el.textContent = msg; el.style.opacity = '0';
+  requestAnimationFrame(() => { el.style.transition = 'opacity .2s'; el.style.opacity = '1'; });
+  clearTimeout(el._timer);
+  el._timer = setTimeout(() => { el.textContent = ''; }, 3500);
+}
+function emailValido(e) { return /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(e); }
+function getEmailSalvo() { try { return localStorage.getItem(EMAIL_KEY) || ''; } catch(e) { return ''; } }
+function mascararEmail(email) {
+  if (!email || !email.includes('@')) return email;
+  const [user, domain] = email.split('@');
+  if (user.length <= 3) return user[0] + '***@' + domain;
+  return user.substring(0,3) + '***@' + domain;
+}
+
+function calcularForca(senha) {
+  const n = senha.length;
+  if (n === 0) return { nivel:0, texto:'', cor:'' };
+  if (n <= 3)  return { nivel:1, texto:'Fraca', cor:'#dc2626' };
+  if (n <= 5)  return { nivel:2, texto:'Média', cor:'#f97316' };
+  return { nivel:3, texto:'Forte', cor:'#16a34a' };
+}
+function pintarSegmentos(containerId, nivel) {
+  const segs = document.querySelectorAll('#' + containerId + ' .strength-segment');
+  segs.forEach((s,i) => {
+    s.classList.remove('on-vermelho','on-laranja','on-verde');
+    if (i === 0 && nivel >= 1) s.classList.add('on-vermelho');
+    if (i === 1 && nivel >= 2) s.classList.add('on-laranja');
+    if (i === 2 && nivel >= 3) s.classList.add('on-verde');
+  });
+}
+function avaliarCampos(id1, id2, segmentsId, txtId, matchId) {
+  const s1 = document.getElementById(id1).value;
+  const s2 = document.getElementById(id2).value;
+  const nivel = calcularForca(s1);
+  pintarSegmentos(segmentsId, nivel.nivel);
+  const txtEl = document.getElementById(txtId);
+  txtEl.textContent = nivel.texto; txtEl.style.color = nivel.cor;
+  const match = document.getElementById(matchId);
+  if (!s2) { match.textContent = ''; match.className = 'match-text'; }
+  else if (s1 === s2) { match.textContent = 'As senhas coincidem'; match.className = 'match-text match-ok'; }
+  else { match.textContent = 'As senhas não coincidem'; match.className = 'match-text match-no'; }
+}
+function avaliarSenha()  { avaliarCampos('senha1','senha2','segments1','strengthText','matchText'); }
+function avaliarSenha2() { avaliarCampos('novaSenha1','novaSenha2','segments2','strengthText2','matchText2'); }
+
+function gerarCodigo() { return String(Math.floor(100000 + Math.random() * 900000)); }
+
+async function enviarCodigoPorEmail(email, codigo, tipo) {
+  const resposta = await fetch(API_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email, codigo, tipo: tipo || 'cadastro' })
+  });
+  let dados = {};
+  try { dados = await resposta.json(); } catch(e) {}
+  if (!resposta.ok) throw new Error(dados.error || `Erro ${resposta.status} ao enviar e-mail`);
+  return dados;
+}
+
+/* ═══════════════════════════════════════════════
+   FUNÇÕES NOVAS — salvar no bot
+   ═══════════════════════════════════════════════ */
+async function salvarSenhaNoBot(senha) {
+  const r = await fetch(`/api/salvar-senha/${USER_ID}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ pin: senha })
+  });
+  const d = await r.json();
+  if (!r.ok || !d.ok) throw new Error(d.error || 'Erro');
+  return d;
+}
+
+async function salvarEmailNoBot(email) {
+  try {
+    await fetch(`/api/salvar-email/${USER_ID}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email })
+    });
+  } catch(e) {}
+}
+
+function botaoLoading(btn, texto) {
+  if (!btn) return;
+  btn.disabled = true;
+  btn.dataset.originalText = btn.innerHTML;
+  btn.innerHTML = `<span class="btn-spinner"></span>${texto || 'Enviando...'}`;
+}
+function botaoRestaurar(btn) {
+  if (!btn) return;
+  btn.disabled = false;
+  if (btn.dataset.originalText) { btn.innerHTML = btn.dataset.originalText; delete btn.dataset.originalText; }
+}
+
+let senhaPendente = '';
+let emailPendente = '';
+
+function salvarSenha() {
+  const s1 = document.getElementById('senha1').value;
+  const s2 = document.getElementById('senha2').value;
+  const email = document.getElementById('email').value.trim();
+  document.getElementById('erroSenha').textContent = '';
+  document.getElementById('erroEmailForm').textContent = '';
+  document.getElementById('erroTermos').textContent = '';
+  if (s1.length < 4) return mostrarErroInline('erroSenha', 'A senha deve ter de 4 a 6 números');
+  if (s1 !== s2) return mostrarErroInline('erroSenha', 'As senhas não coincidem');
+  if (!emailValido(email)) return mostrarErroInline('erroEmailForm', 'Digite um e-mail válido para recuperação');
+  if (!termosAceitos) {
+    const box = document.getElementById('termosBox');
+    box.classList.add('erro');
+    setTimeout(() => box.classList.remove('erro'), 500);
+    return mostrarErroInline('erroTermos', 'Você precisa aceitar os Termos de Uso para continuar');
+  }
+  senhaPendente = s1;
+  emailPendente = email;
+  iniciarConfirmacaoEmail();
+}
+
+let confirmCodigoAtual = null;
+let confirmCodigoExpira = 0;
+let confirmIntervaloTimer = null;
+let confirmTempoReenvio = 0;
+let confirmVerificando = false;
+
+const confirmInputs = Array.from(document.querySelectorAll('#confirmCodeInputsWrap input'));
+const confirmWrapInputs = document.getElementById('confirmCodeInputsWrap');
+const confirmStatusCodigo = document.getElementById('confirmStatusCodigo');
+
+confirmInputs.forEach((input, idx) => {
+  input.addEventListener('input', () => {
+    input.value = input.value.replace(/\D/g,'').slice(0,1);
+    input.classList.toggle('filled', !!input.value);
+    if (input.classList.contains('erro')) confirmInputs.forEach(i => i.classList.remove('erro'));
+    if (input.value && idx < confirmInputs.length - 1) confirmInputs[idx+1].focus();
+    const codigo = confirmInputs.map(i => i.value).join('');
+    if (codigo.length === 6) verificarCodigoEmailAutomatico(codigo);
+  });
+  input.addEventListener('keydown', e => {
+    if (e.key === 'Backspace' && !input.value && idx > 0) {
+      confirmInputs[idx-1].focus(); confirmInputs[idx-1].value = '';
+      confirmInputs[idx-1].classList.remove('filled','sucesso','erro');
+    }
+    if (e.key === 'ArrowLeft'  && idx > 0) confirmInputs[idx-1].focus();
+    if (e.key === 'ArrowRight' && idx < confirmInputs.length - 1) confirmInputs[idx+1].focus();
+  });
+  input.addEventListener('paste', e => {
+    e.preventDefault();
+    const txt = (e.clipboardData || window.clipboardData).getData('text') || '';
+    const digitos = txt.replace(/\D/g,'').slice(0,6).split('');
+    digitos.forEach((d,i) => { if (confirmInputs[i]) { confirmInputs[i].value = d; confirmInputs[i].classList.add('filled'); } });
+    const proximo = Math.min(digitos.length, confirmInputs.length - 1);
+    confirmInputs[proximo].focus();
+    const codigo = confirmInputs.map(i => i.value).join('');
+    if (codigo.length === 6) verificarCodigoEmailAutomatico(codigo);
+  });
+});
+
+function limparConfirmCodigo() {
+  confirmInputs.forEach(i => { i.value = ''; i.classList.remove('filled','erro','sucesso'); });
+  confirmWrapInputs.classList.remove('travado','tremendo');
+  confirmStatusCodigo.textContent = '';
+  confirmStatusCodigo.className = 'status-codigo';
+  confirmVerificando = false;
+}
+
+async function iniciarConfirmacaoEmail() {
+  confirmCodigoAtual = gerarCodigo();
+  confirmCodigoExpira = Date.now() + 5*60*1000;
+  document.getElementById('confirmEmailMostrado').textContent = mascararEmail(emailPendente);
+  limparConfirmCodigo();
+  confirmStatusCodigo.textContent = 'Enviando código para seu e-mail...';
+  confirmStatusCodigo.className = 'status-codigo';
+  mostrarTela('confirmEmailScreen');
+  try {
+    await enviarCodigoPorEmail(emailPendente, confirmCodigoAtual, 'cadastro');
+    confirmStatusCodigo.textContent = '';
+    confirmStatusCodigo.className = 'status-codigo';
+    iniciarContadoresEmail();
+    setTimeout(() => confirmInputs[0].focus(), 120);
+  } catch (e) {
+    console.error('Falha ao enviar e-mail:', e);
+    confirmStatusCodigo.textContent = 'Não foi possível enviar o e-mail. Toque em "Reenviar código" para tentar novamente.';
+    confirmStatusCodigo.className = 'status-codigo erro';
+    confirmTempoReenvio = 0;
+    atualizarContadoresEmail();
+  }
+}
+
+function iniciarContadoresEmail() {
+  clearInterval(confirmIntervaloTimer);
+  confirmTempoReenvio = 60;
+  atualizarContadoresEmail();
+  confirmIntervaloTimer = setInterval(atualizarContadoresEmail, 1000);
+}
+function atualizarContadoresEmail() {
+  const restante = confirmCodigoExpira - Date.now();
+  const exp = document.getElementById('confirmExpiraTexto');
+  if (restante <= 0) { exp.textContent = 'Código expirado'; exp.style.color = '#dc2626'; }
+  else {
+    const m = Math.floor(restante/60000);
+    const s = Math.floor((restante % 60000)/1000);
+    exp.textContent = `Expira em ${m}:${String(s).padStart(2,'0')}`;
+    exp.style.color = '';
+  }
+  const btn = document.getElementById('confirmResendBtn');
+  if (btn.dataset.loading === '1') return;
+  if (confirmTempoReenvio > 0) { btn.disabled = true; btn.textContent = `Reenviar em ${confirmTempoReenvio}s`; confirmTempoReenvio--; }
+  else { btn.disabled = false; btn.textContent = 'Reenviar código'; }
+}
+
+async function reenviarCodigoEmail() {
+  if (confirmTempoReenvio > 0) return;
+  const btn = document.getElementById('confirmResendBtn');
+  confirmCodigoAtual = gerarCodigo();
+  confirmCodigoExpira = Date.now() + 5*60*1000;
+  limparConfirmCodigo();
+  botaoLoading(btn, 'Enviando...');
+  btn.dataset.loading = '1';
+  confirmStatusCodigo.textContent = 'Reenviando código...';
+  confirmStatusCodigo.className = 'status-codigo';
+  try {
+    await enviarCodigoPorEmail(emailPendente, confirmCodigoAtual, 'cadastro');
+    confirmStatusCodigo.textContent = 'Código reenviado com sucesso!';
+    confirmStatusCodigo.className = 'status-codigo';
+    setTimeout(() => { if (confirmStatusCodigo.textContent === 'Código reenviado com sucesso!') confirmStatusCodigo.textContent = ''; }, 2500);
+    iniciarContadoresEmail();
+    confirmInputs[0].focus();
+  } catch (e) {
+    console.error('Falha ao reenviar:', e);
+    confirmStatusCodigo.textContent = 'Falha ao reenviar. Verifique sua conexão e tente novamente.';
+    confirmStatusCodigo.className = 'status-codigo erro';
+    confirmTempoReenvio = 0;
+    atualizarContadoresEmail();
+  } finally {
+    delete btn.dataset.loading;
+    botaoRestaurar(btn);
+  }
+}
+
+function verificarCodigoEmailAutomatico(codigo) {
+  if (confirmVerificando) return;
+  confirmVerificando = true;
+  confirmWrapInputs.classList.add('travado');
+  setTimeout(() => {
+    if (Date.now() > confirmCodigoExpira) {
+      confirmInputs.forEach(i => i.classList.add('erro'));
+      confirmStatusCodigo.textContent = 'Código expirado. Solicite um novo.';
+      confirmStatusCodigo.className = 'status-codigo erro';
+      liberarConfirmTentar();
+      return;
+    }
+    if (codigo === confirmCodigoAtual) {
+      confirmInputs.forEach(i => { i.classList.remove('erro'); i.classList.add('sucesso'); });
+      confirmStatusCodigo.textContent = '';
+      confirmStatusCodigo.className = 'status-codigo';
+      setTimeout(async () => {
+        clearInterval(confirmIntervaloTimer);
+        try {
+          await salvarSenhaNoBot(senhaPendente);
+          await salvarEmailNoBot(emailPendente);
+          try {
+            localStorage.setItem(STORAGE_KEY, senhaPendente);
+            localStorage.setItem(EMAIL_KEY, emailPendente);
+          } catch(e) {}
+          senhaPendente = '';
+          emailPendente = '';
+          mostrarSucesso('Senha configurada', 'E-mail confirmado e senha criada com sucesso. Está tudo pronto para uso.');
+        } catch (e) {
+          confirmStatusCodigo.textContent = 'Erro ao salvar senha no bot. Tente novamente.';
+          confirmStatusCodigo.className = 'status-codigo erro';
+          liberarConfirmTentar();
+        }
+      }, 900);
+      return;
+    }
+    confirmInputs.forEach(i => i.classList.add('erro'));
+    confirmStatusCodigo.textContent = '';
+    confirmStatusCodigo.className = 'status-codigo';
+    confirmWrapInputs.classList.add('tremendo');
+    setTimeout(() => confirmWrapInputs.classList.remove('tremendo'), 500);
+    if (navigator.vibrate) { try { navigator.vibrate([80,50,120]); } catch(e) {} }
+    liberarConfirmTentar();
+    setTimeout(() => { limparConfirmCodigo(); confirmInputs[0].focus(); }, 900);
+  }, 300);
+}
+
+function liberarConfirmTentar() {
+  confirmVerificando = false;
+  confirmWrapInputs.classList.remove('travado');
+}
+
+function voltarParaForm() {
+  clearInterval(confirmIntervaloTimer);
+  limparConfirmCodigo();
+  senhaPendente = '';
+  emailPendente = '';
+  mostrarTela('formScreen');
+}
+
+function mostrarSucesso(titulo, texto) {
+  document.getElementById('successTitle').textContent = titulo;
+  document.getElementById('successText').textContent = texto;
+  mostrarTela('successScreen');
+}
+
+function esqueceuSenha() {
+  document.getElementById('emailRecuperacao').value = getEmailSalvo();
+  document.getElementById('erroEmail').textContent = '';
+  mostrarTela('forgotScreen');
+}
+
+let codigoAtual = null;
+let codigoExpira = 0;
+let emailRecuperacao = '';
+let intervaloTimer = null;
+let tempoReenvio = 0;
+let verificando = false;
+
+const codeInputs = Array.from(document.querySelectorAll('#codeInputsWrap input'));
+const wrapInputs = document.getElementById('codeInputsWrap');
+const statusCodigo = document.getElementById('statusCodigo');
+
+codeInputs.forEach((input, idx) => {
+  input.addEventListener('input', () => {
+    input.value = input.value.replace(/\D/g,'').slice(0,1);
+    input.classList.toggle('filled', !!input.value);
+    if (input.classList.contains('erro')) codeInputs.forEach(i => i.classList.remove('erro'));
+    if (input.value && idx < codeInputs.length - 1) codeInputs[idx+1].focus();
+    const codigo = codeInputs.map(i => i.value).join('');
+    if (codigo.length === 6) verificarCodigoAutomatico(codigo);
+  });
+  input.addEventListener('keydown', e => {
+    if (e.key === 'Backspace' && !input.value && idx > 0) {
+      codeInputs[idx-1].focus(); codeInputs[idx-1].value = '';
+      codeInputs[idx-1].classList.remove('filled','sucesso','erro');
+    }
+    if (e.key === 'ArrowLeft'  && idx > 0) codeInputs[idx-1].focus();
+    if (e.key === 'ArrowRight' && idx < codeInputs.length - 1) codeInputs[idx+1].focus();
+  });
+  input.addEventListener('paste', e => {
+    e.preventDefault();
+    const txt = (e.clipboardData || window.clipboardData).getData('text') || '';
+    const digitos = txt.replace(/\D/g,'').slice(0,6).split('');
+    digitos.forEach((d,i) => { if (codeInputs[i]) { codeInputs[i].value = d; codeInputs[i].classList.add('filled'); } });
+    const proximo = Math.min(digitos.length, codeInputs.length - 1);
+    codeInputs[proximo].focus();
+    const codigo = codeInputs.map(i => i.value).join('');
+    if (codigo.length === 6) verificarCodigoAutomatico(codigo);
+  });
+});
+
+function limparCamposCodigo() {
+  codeInputs.forEach(i => { i.value = ''; i.classList.remove('filled','erro','sucesso'); });
+  wrapInputs.classList.remove('travado','tremendo');
+  statusCodigo.textContent = '';
+  statusCodigo.className = 'status-codigo';
+  verificando = false;
+}
+
+async function enviarCodigo() {
+  const email = document.getElementById('emailRecuperacao').value.trim();
+  if (!emailValido(email)) { document.getElementById('erroEmail').textContent = 'Digite um e-mail válido'; return; }
+  document.getElementById('erroEmail').textContent = '';
+  const btn = document.getElementById('btnEnviarCodigo');
+  botaoLoading(btn, 'Enviando...');
+  emailRecuperacao = email;
+  codigoAtual = gerarCodigo();
+  codigoExpira = Date.now() + 5*60*1000;
+  limparCamposCodigo();
+  document.getElementById('codigoEmail').textContent = mascararEmail(email);
+  mostrarTela('codeScreen');
+  statusCodigo.textContent = 'Enviando código para seu e-mail...';
+  statusCodigo.className = 'status-codigo';
+  try {
+    await enviarCodigoPorEmail(email, codigoAtual, 'recuperacao');
+    statusCodigo.textContent = '';
+    statusCodigo.className = 'status-codigo';
+    iniciarContadores();
+    setTimeout(() => codeInputs[0].focus(), 120);
+  } catch (e) {
+    console.error('Falha ao enviar código de recuperação:', e);
+    statusCodigo.textContent = 'Não foi possível enviar o e-mail. Toque em "Reenviar código" para tentar novamente.';
+    statusCodigo.className = 'status-codigo erro';
+    tempoReenvio = 0;
+    atualizarContadores();
+  } finally {
+    botaoRestaurar(btn);
+  }
+}
+
+function iniciarContadores() {
+  clearInterval(intervaloTimer);
+  tempoReenvio = 60;
+  atualizarContadores();
+  intervaloTimer = setInterval(atualizarContadores, 1000);
+}
+function atualizarContadores() {
+  const restante = codigoExpira - Date.now();
+  const exp = document.getElementById('expiraTexto');
+  if (restante <= 0) { exp.textContent = 'Código expirado'; exp.style.color = '#dc2626'; }
+  else {
+    const m = Math.floor(restante/60000);
+    const s = Math.floor((restante % 60000)/1000);
+    exp.textContent = `Expira em ${m}:${String(s).padStart(2,'0')}`;
+    exp.style.color = '';
+  }
+  const btn = document.getElementById('resendBtn');
+  if (btn.dataset.loading === '1') return;
+  if (tempoReenvio > 0) { btn.disabled = true; btn.textContent = `Reenviar em ${tempoReenvio}s`; tempoReenvio--; }
+  else { btn.disabled = false; btn.textContent = 'Reenviar código'; }
+}
+
+async function reenviarCodigo() {
+  if (tempoReenvio > 0) return;
+  const btn = document.getElementById('resendBtn');
+  codigoAtual = gerarCodigo();
+  codigoExpira = Date.now() + 5*60*1000;
+  limparCamposCodigo();
+  botaoLoading(btn, 'Enviando...');
+  btn.dataset.loading = '1';
+  statusCodigo.textContent = 'Reenviando código...';
+  statusCodigo.className = 'status-codigo';
+  try {
+    await enviarCodigoPorEmail(emailRecuperacao, codigoAtual, 'recuperacao');
+    statusCodigo.textContent = 'Código reenviado com sucesso!';
+    setTimeout(() => { if (statusCodigo.textContent === 'Código reenviado com sucesso!') statusCodigo.textContent = ''; }, 2500);
+    iniciarContadores();
+    codeInputs[0].focus();
+  } catch (e) {
+    console.error('Falha ao reenviar:', e);
+    statusCodigo.textContent = 'Falha ao reenviar. Verifique sua conexão e tente novamente.';
+    statusCodigo.className = 'status-codigo erro';
+    tempoReenvio = 0;
+    atualizarContadores();
+  } finally {
+    delete btn.dataset.loading;
+    botaoRestaurar(btn);
+  }
+}
+
+function verificarCodigoAutomatico(codigo) {
+  if (verificando) return;
+  verificando = true;
+  wrapInputs.classList.add('travado');
+  setTimeout(() => {
+    if (Date.now() > codigoExpira) {
+      codeInputs.forEach(i => i.classList.add('erro'));
+      statusCodigo.textContent = 'Código expirado. Solicite um novo.';
+      statusCodigo.className = 'status-codigo erro';
+      liberarParaTentar();
+      return;
+    }
+    if (codigo === codigoAtual) {
+      codeInputs.forEach(i => { i.classList.remove('erro'); i.classList.add('sucesso'); });
+      statusCodigo.textContent = '';
+      statusCodigo.className = 'status-codigo';
+      setTimeout(() => {
+        clearInterval(intervaloTimer);
+        ['novaSenha1','novaSenha2'].forEach(id => { document.getElementById(id).value = ''; atualizarMascara(id); });
+        senhasReveladas.novaSenha1 = false;
+        senhasReveladas.novaSenha2 = false;
+        resetarOlhinhos();
+        avaliarSenha2();
+        mostrarTela('newPassScreen');
+      }, 900);
+      return;
+    }
+    codeInputs.forEach(i => i.classList.add('erro'));
+    statusCodigo.textContent = '';
+    statusCodigo.className = 'status-codigo';
+    wrapInputs.classList.add('tremendo');
+    setTimeout(() => wrapInputs.classList.remove('tremendo'), 500);
+    if (navigator.vibrate) { try { navigator.vibrate([80,50,120]); } catch(e) {} }
+    liberarParaTentar();
+    setTimeout(() => { limparCamposCodigo(); codeInputs[0].focus(); }, 900);
+  }, 300);
+}
+
+function liberarParaTentar() {
+  verificando = false;
+  wrapInputs.classList.remove('travado');
+}
+
+function voltarParaEmail() {
+  clearInterval(intervaloTimer);
+  limparCamposCodigo();
+  mostrarTela('forgotScreen');
+}
+
+/* ═══════════════════════════════════════════════
+   SALVAR NOVA SENHA (recuperação) — ATUALIZADA
+   ═══════════════════════════════════════════════ */
+async function salvarNovaSenha() {
+  const s1 = document.getElementById('novaSenha1').value;
+  const s2 = document.getElementById('novaSenha2').value;
+  document.getElementById('erroNovaSenha').textContent = '';
+  if (s1.length < 4) return mostrarErroInline('erroNovaSenha', 'A senha deve ter de 4 a 6 números');
+  if (s1 !== s2) return mostrarErroInline('erroNovaSenha', 'As senhas não coincidem');
+
+  try {
+    await salvarSenhaNoBot(s1);
+    try { localStorage.setItem(STORAGE_KEY, s1); } catch(e) {}
+    if (emailRecuperacao) {
+      await salvarEmailNoBot(emailRecuperacao);
+      try { localStorage.setItem(EMAIL_KEY, emailRecuperacao); } catch(e) {}
+    }
+    codigoAtual = null;
+    codigoExpira = 0;
+    clearInterval(intervaloTimer);
+    mostrarSucesso('Senha redefinida', 'Sua nova senha para saque foi salva com sucesso.');
+  } catch (e) {
+    mostrarErroInline('erroNovaSenha', 'Erro ao salvar no bot. Tente novamente.');
+  }
+}
+
+function voltarInicio() {
+  clearInterval(intervaloTimer);
+  clearInterval(confirmIntervaloTimer);
+  CAMPOS_SENHA.forEach(id => { const el = document.getElementById(id); el.value = ''; atualizarMascara(id); });
+  document.getElementById('email').value = getEmailSalvo();
+  resetarOlhinhos();
+  termosAceitos = false;
+  const box = document.getElementById('termosBox');
+  box.classList.remove('marcado','erro');
+  ['erroSenha','erroEmailForm','erroNovaSenha','erroEmail','erroTermos'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.textContent = '';
+  });
+  limparCamposCodigo();
+  limparConfirmCodigo();
+  avaliarSenha(); avaliarSenha2();
+  codigoAtual = null; codigoExpira = 0; tempoReenvio = 0;
+  confirmCodigoAtual = null; confirmCodigoExpira = 0; confirmTempoReenvio = 0;
+  senhaPendente = ''; emailPendente = '';
+  mostrarTela('formScreen');
+}
+
+(function init() {
+  carregarTema();
+  configurarCamposSenha();
+  const emailSalvo = getEmailSalvo();
+  if (emailSalvo) document.getElementById('email').value = emailSalvo;
+  avaliarSenha(); avaliarSenha2();
+})();
+</script>
+</body>
+</html>
