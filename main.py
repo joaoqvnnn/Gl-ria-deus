@@ -1,6 +1,12 @@
 import logging
 import threading
 import asyncio
+import os
+import smtplib
+
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
+from email.utils import formataddr
 
 from flask import Flask, request, jsonify, render_template
 from telegram import Update, InlineKeyboardMarkup, InlineKeyboardButton
@@ -160,6 +166,135 @@ def api_checar_senha(user_id: int):
     except Exception as e:
         logger.exception("Erro checando senha: %s", e)
         return jsonify(ok=False, error="Erro interno."), 500
+
+
+# ═══════════════════════════════════════════════
+# 📧 API: enviar código por e-mail (Gmail SMTP)
+# ═══════════════════════════════════════════════
+@flask_app.post("/api/enviar-codigo")
+def api_enviar_codigo():
+    data = request.get_json(silent=True) or {}
+    email = str(data.get("email", "")).strip()
+    codigo = str(data.get("codigo", "")).strip()
+    tipo = str(data.get("tipo", "cadastro")).strip()
+
+    if "@" not in email or not codigo:
+        return jsonify(ok=False, error="Dados inválidos."), 400
+
+    gmail_user = os.getenv("GMAIL_USER", "").strip()
+    gmail_pass = os.getenv("GMAIL_APP_PASSWORD", "").strip()
+    nome_loja = os.getenv("STORE_NAME", "Larizinha Store")
+
+    if not gmail_user or not gmail_pass:
+        logger.error("GMAIL_USER / GMAIL_APP_PASSWORD não configurados")
+        return jsonify(ok=False, error="Servidor de e-mail não configurado."), 500
+
+    eh_recuperacao = (tipo == "recuperacao")
+    assunto = "Recuperação de senha" if eh_recuperacao else "Confirme seu e-mail"
+    titulo = "Redefinição de senha" if eh_recuperacao else "Confirme seu e-mail"
+    subtitulo = (
+        "Recebemos uma solicitação para redefinir a senha da sua conta. "
+        "Utilize o código abaixo para continuar:"
+    ) if eh_recuperacao else (
+        f"Recebemos seu cadastro na {nome_loja}. "
+        "Para ativar sua conta, utilize o código de verificação abaixo:"
+    )
+
+    html = f"""
+    <!DOCTYPE html>
+    <html lang="pt-BR">
+    <head>
+      <meta charset="UTF-8">
+      <meta name="viewport" content="width=device-width, initial-scale=1.0">
+      <title>{titulo}</title>
+      <style>
+        @media (prefers-color-scheme: dark) {{
+          .corpo-email {{ background-color:#000000 !important; }}
+          .cartao-email {{ background-color:#111111 !important; border-color:#262626 !important; }}
+          .texto-principal {{ color:#f5f5f5 !important; }}
+          .texto-secundario {{ color:#a3a3a3 !important; }}
+          .linha-divisoria {{ border-color:#262626 !important; }}
+          .rodape-texto {{ color:#6b7280 !important; }}
+          .codigo-box {{ background-color:#1a1a1a !important; border-color:#333333 !important; }}
+          .codigo-texto {{ color:#ffffff !important; }}
+        }}
+      </style>
+    </head>
+    <body style="margin:0; padding:0; background-color:#f4f4f5; font-family:-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; -webkit-font-smoothing:antialiased;">
+      <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" class="corpo-email" style="background-color:#f4f4f5; padding:40px 16px;">
+        <tr>
+          <td align="center">
+            <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="max-width:560px;">
+              <tr>
+                <td>
+                  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" class="cartao-email" style="background-color:#ffffff; border:1px solid #e5e7eb; border-radius:12px; overflow:hidden;">
+                    <tr>
+                      <td style="padding:48px 40px;">
+                        <h1 class="texto-principal" style="margin:0 0 16px; font-size:24px; font-weight:700; color:#111827; line-height:1.3;">{titulo}</h1>
+                        <p class="texto-secundario" style="margin:0 0 24px; font-size:15px; line-height:1.6; color:#4b5563;">{subtitulo}</p>
+                        <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0">
+                          <tr>
+                            <td align="center">
+                              <div class="codigo-box" style="display:inline-block; padding:20px 40px; background-color:#f9fafb; border:1px solid #e5e7eb; border-radius:8px;">
+                                <span class="codigo-texto" style="font-size:36px; font-weight:800; letter-spacing:12px; color:#111827; font-family:monospace, 'Courier New', Courier;">{codigo}</span>
+                              </div>
+                            </td>
+                          </tr>
+                        </table>
+                        <p class="texto-secundario" style="margin:32px 0 0; font-size:14px; line-height:1.6; color:#6b7280;">
+                          Este código expira em 5 minutos. Se você não solicitou, ignore este e-mail.
+                        </p>
+                      </td>
+                    </tr>
+                    <tr>
+                      <td class="linha-divisoria" style="border-top:1px solid #e5e7eb; padding:32px 40px; background-color:#f9fafb;">
+                        <p class="texto-principal" style="margin:0 0 8px; font-size:15px; font-weight:600; color:#111827;">Ficou com alguma dúvida?</p>
+                        <p class="texto-secundario" style="margin:0 0 16px; font-size:14px; line-height:1.6; color:#4b5563;">
+                          Esta é uma mensagem automática. Pedimos que não responda este e-mail.
+                        </p>
+                        <p class="texto-secundario" style="margin:0; font-size:13px; line-height:1.6; color:#6b7280;">
+                          Você está recebendo este e-mail porque se cadastrou na {nome_loja}.
+                        </p>
+                      </td>
+                    </tr>
+                  </table>
+                </td>
+              </tr>
+              <tr>
+                <td style="padding-top:32px;">
+                  <p class="rodape-texto" style="margin:0; font-size:12px; color:#6b7280; line-height:1.5; text-align:center;">
+                    <strong style="color:#374151;">{nome_loja}</strong>
+                  </p>
+                </td>
+              </tr>
+            </table>
+          </td>
+        </tr>
+      </table>
+    </body>
+    </html>
+    """
+
+    try:
+        msg = MIMEMultipart("alternative")
+        msg["Subject"] = assunto
+        msg["From"] = formataddr((nome_loja, gmail_user))
+        msg["To"] = email
+        msg.attach(MIMEText(html, "html", "utf-8"))
+
+        with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
+            server.login(gmail_user, gmail_pass)
+            server.sendmail(gmail_user, [email], msg.as_string())
+
+        logger.info("Código enviado para %s (tipo=%s)", email, tipo)
+        return jsonify(ok=True, message="E-mail enviado com sucesso")
+
+    except smtplib.SMTPAuthenticationError:
+        logger.exception("Falha de autenticação SMTP")
+        return jsonify(ok=False, error="Falha na autenticação do servidor de e-mail."), 500
+    except Exception as e:
+        logger.exception("Erro enviando e-mail: %s", e)
+        return jsonify(ok=False, error="Falha ao enviar e-mail. Tente novamente."), 500
 
 
 def run_flask():
