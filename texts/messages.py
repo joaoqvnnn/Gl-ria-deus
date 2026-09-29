@@ -88,7 +88,7 @@ def profile_text(user: dict, stats: dict | None = None) -> str:
         "- 👤 <b>Informações:</b>\n"
         f"🆔 ID da Carteira: <code>{user['user_id']}</code>\n"
         f"💰 Saldo Atual: <b>R$ {float(user['balance']):.2f}</b>\n"
-        f"📲 Seu Whatsapp: {whatsapp}\n\n"
+        f"📲 Seu Whatsapp: <code>{whatsapp}</code>\n\n"
         "─── 📊 <b>Suas Movimentações:</b>\n"
         f"ー 🛒 Compras Realizadas: <b>{compras}</b>\n"
         f"ー 💰 Total Gasto Em Compras: <b>R$ {gasto:.2f}</b>\n"
