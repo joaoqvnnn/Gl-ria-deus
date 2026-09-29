@@ -1,9 +1,3 @@
-
----
-
-## 📄 11) `handlers/start.py`  — **GATE DE ENTRADA + BOAS-VINDAS**
-
-```python
 import logging
 from telegram import Update
 from telegram.constants import ChatMemberStatus, ParseMode
@@ -13,12 +7,17 @@ from telegram.ext import ContextTypes
 from config import CHANNEL_ID
 from database import db
 from keyboards import menus
+from services import deeplink
 from texts import messages
 
 logger = logging.getLogger(__name__)
 
 # Guarda a última mensagem de bloqueio por usuário: {user_id: (chat_id, message_id)}
 GATE_MESSAGES: dict[int, tuple[int, int]] = {}
+
+# Guarda o payload pendente por usuário (quando ele ainda não entrou no canal):
+# {user_id: payload_str}
+PENDING_PAYLOAD: dict[int, str] = {}
 
 
 async def is_member(context: ContextTypes.DEFAULT_TYPE, user_id: int) -> bool:
@@ -36,13 +35,124 @@ async def is_member(context: ContextTypes.DEFAULT_TYPE, user_id: int) -> bool:
         return False
 
 
+async def _handle_payload(
+    context: ContextTypes.DEFAULT_TYPE,
+    chat_id: int,
+    user: dict,
+    payload: str,
+    via_edit_message_id: int | None = None,
+):
+    """
+    Executa a ação do payload.
+    Se `via_edit_message_id` for passado, EDITA a mensagem do Gate.
+    Caso contrário, ENVIA uma nova mensagem.
+    """
+    data = await deeplink.resolve_payload(payload)
+
+    # ─── Indicação (referral): salva e mostra o menu
+    if data["type"] == "referral":
+        referrer_id = data["referrer_id"]
+        if referrer_id != user["user_id"]:
+            await db.set_referred_by(user["user_id"], referrer_id)
+            logger.info("Usuário %s indicado por %s", user["user_id"], referrer_id)
+
+        await _show_welcome(context, chat_id, user, via_edit_message_id)
+        return
+
+    # ─── Produto específico
+    if data["type"] == "product":
+        product = await db.get_product(data["product_id"])
+        if product:
+            text = messages.product_text(user, product)
+            kb = menus.product_keyboard(product["id"])
+
+            if via_edit_message_id:
+                try:
+                    await context.bot.edit_message_text(
+                        chat_id=chat_id,
+                        message_id=via_edit_message_id,
+                        text=text,
+                        reply_markup=kb,
+                        parse_mode=ParseMode.HTML,
+                    )
+                    return
+                except TelegramError:
+                    pass
+
+            await context.bot.send_message(
+                chat_id=chat_id, text=text, reply_markup=kb, parse_mode=ParseMode.HTML
+            )
+            return
+
+    # ─── Loja direta
+    if data["type"] == "catalog":
+        products = await db.get_products()
+        text = messages.catalog_text(user)
+        kb = menus.catalog_keyboard(products)
+
+        if via_edit_message_id:
+            try:
+                await context.bot.edit_message_text(
+                    chat_id=chat_id,
+                    message_id=via_edit_message_id,
+                    text=text,
+                    reply_markup=kb,
+                    parse_mode=ParseMode.HTML,
+                )
+                return
+            except TelegramError:
+                pass
+
+        await context.bot.send_message(
+            chat_id=chat_id, text=text, reply_markup=kb, parse_mode=ParseMode.HTML
+        )
+        return
+
+    # ─── Payload desconhecido → menu principal normal
+    await _show_welcome(context, chat_id, user, via_edit_message_id)
+
+
+async def _show_welcome(
+    context: ContextTypes.DEFAULT_TYPE,
+    chat_id: int,
+    user: dict,
+    via_edit_message_id: int | None = None,
+):
+    text = messages.welcome_text(user)
+    kb = menus.main_menu_keyboard()
+
+    if via_edit_message_id:
+        try:
+            await context.bot.edit_message_text(
+                chat_id=chat_id,
+                message_id=via_edit_message_id,
+                text=text,
+                reply_markup=kb,
+                parse_mode=ParseMode.HTML,
+            )
+            return
+        except TelegramError:
+            pass
+
+    await context.bot.send_message(
+        chat_id=chat_id, text=text, reply_markup=kb, parse_mode=ParseMode.HTML
+    )
+
+
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Comando /start."""
+    """Comando /start — suporta deep link via context.args."""
     user = update.effective_user
     u = await db.get_or_create_user(user.id, user.username, user.first_name)
 
-    # Verifica canal obrigatório
+    # ─── Captura o payload (?start=xyz)
+    payload = context.args[0] if context.args else ""
+
+    # ─── Verifica canal obrigatório
     if not await is_member(context, user.id):
+        # Guarda o payload pra aplicar depois que ele entrar no canal
+        if payload:
+            PENDING_PAYLOAD[user.id] = payload
+
         msg = await update.message.reply_text(
             messages.gate_text(),
             reply_markup=menus.gate_keyboard(),
@@ -51,15 +161,16 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         GATE_MESSAGES[user.id] = (msg.chat_id, msg.message_id)
         return
 
-    await update.message.reply_text(
-        messages.welcome_text(u),
-        reply_markup=menus.main_menu_keyboard(),
-        parse_mode=ParseMode.HTML,
-    )
+    # ─── Já está no canal: processa o payload
+    if payload:
+        # Se for referral, salva no banco antes de mostrar qualquer coisa
+        await _handle_payload(context, update.effective_chat.id, u, payload)
+    else:
+        await _show_welcome(context, update.effective_chat.id, u)
 
 
 async def chat_member_update(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Detecta quando o usuário entra no canal e EDITA a mensagem de bloqueio."""
+    """Detecta quando o usuário entra no canal → EDITA a mensagem de bloqueio."""
     cmu = update.chat_member
     if not cmu:
         return
@@ -89,13 +200,12 @@ async def chat_member_update(update: Update, context: ContextTypes.DEFAULT_TYPE)
         user_id, cmu.from_user.username, cmu.from_user.first_name
     )
 
-    try:
-        await context.bot.edit_message_text(
-            chat_id=chat_id,
-            message_id=message_id,
-            text=messages.welcome_text(u),
-            reply_markup=menus.main_menu_keyboard(),
-            parse_mode=ParseMode.HTML,
-        )
-    except TelegramError as e:
-        logger.warning("Não foi possível editar mensagem do gate: %s", e)
+    # ─── Se tinha payload pendente (deep link), aplica agora
+    payload = PENDING_PAYLOAD.pop(user_id, None)
+
+    if payload:
+        await _handle_payload(context, chat_id, u, payload, via_edit_message_id=message_id)
+        return
+
+    # ─── Senão, mostra boas-vindas normal (editando a mensagem do Gate)
+    await _show_welcome(context, chat_id, u, via_edit_message_id=message_id)
