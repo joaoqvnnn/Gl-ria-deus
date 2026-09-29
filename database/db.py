@@ -69,6 +69,16 @@ async def init_db():
             status       TEXT DEFAULT 'pending',
             created_at   TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         );
+
+        CREATE TABLE IF NOT EXISTS gift_cards (
+            code         TEXT PRIMARY KEY,
+            tipo         TEXT NOT NULL,
+            valor        REAL DEFAULT 0,
+            product_id   INTEGER,
+            redeemed_by  INTEGER,
+            redeemed_at  TIMESTAMP,
+            created_at   TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );
         """
     )
     await _db.commit()
@@ -103,6 +113,53 @@ async def update_balance(user_id: int, delta: float):
     await _db.commit()
 
 
+async def set_whatsapp(user_id: int, whatsapp: str | None):
+    await _db.execute(
+        "UPDATE users SET whatsapp = ? WHERE user_id = ?",
+        (whatsapp, user_id),
+    )
+    await _db.commit()
+
+
+async def user_stats(user_id: int) -> dict:
+    """Retorna estatísticas consolidadas para o perfil."""
+    # Compras
+    cur = await _db.execute(
+        "SELECT COUNT(*) AS c, COALESCE(SUM(total), 0) AS s FROM purchases WHERE user_id = ?",
+        (user_id,),
+    )
+    row = await cur.fetchone()
+    compras = int(row["c"])
+    gasto = float(row["s"])
+
+    # PIX inseridos (só recarga paga)
+    cur = await _db.execute(
+        "SELECT COALESCE(SUM(valor), 0) AS s FROM pix_pending "
+        "WHERE user_id = ? AND tipo = 'recarga' AND status = 'paid'",
+        (user_id,),
+    )
+    row = await cur.fetchone()
+    pix_inseridos = float(row["s"])
+
+    # Gifts resgatados
+    cur = await _db.execute(
+        "SELECT COUNT(*) AS c, COALESCE(SUM(valor), 0) AS s FROM gift_cards "
+        "WHERE redeemed_by = ?",
+        (user_id,),
+    )
+    row = await cur.fetchone()
+    gifts_count = int(row["c"])
+    gifts_valor = float(row["s"])
+
+    return {
+        "compras": compras,
+        "gasto": gasto,
+        "pix_inseridos": pix_inseridos,
+        "gifts_count": gifts_count,
+        "gifts_valor": gifts_valor,
+    }
+
+
 # ───────────── PRODUCTS ─────────────
 async def get_products():
     cur = await _db.execute("SELECT * FROM products WHERE active = 1 ORDER BY id ASC")
@@ -134,7 +191,6 @@ async def add_product(name, description, price, stock, emoji="📦", activate_ur
 
 # ───────────── STOCK ITEMS ─────────────
 async def take_stock_items(product_id: int, qty: int):
-    """Pega qty itens não usados e marca como usados. Retorna lista."""
     cur = await _db.execute(
         "SELECT * FROM stock_items WHERE product_id = ? AND used = 0 LIMIT ?",
         (product_id, qty),
@@ -171,6 +227,22 @@ async def get_purchase(pid: str):
     return dict(row) if row else None
 
 
+async def list_purchases(user_id: int, only_active: bool = False):
+    """Lista compras do usuário, opcionalmente apenas ativas (não vencidas)."""
+    if only_active:
+        cur = await _db.execute(
+            "SELECT * FROM purchases WHERE user_id = ? AND expires_at > datetime('now') "
+            "ORDER BY created_at DESC",
+            (user_id,),
+        )
+    else:
+        cur = await _db.execute(
+            "SELECT * FROM purchases WHERE user_id = ? ORDER BY created_at DESC",
+            (user_id,),
+        )
+    return [dict(r) for r in await cur.fetchall()]
+
+
 # ───────────── PIX ─────────────
 async def create_pix(pix_id, user_id, valor, tipo, product_id, quantity, copia_cola):
     await _db.execute(
@@ -194,6 +266,29 @@ async def mark_pix_paid(pix_id):
 
 async def cancel_pix(pix_id):
     await _db.execute("UPDATE pix_pending SET status = 'cancelled' WHERE id = ?", (pix_id,))
+    await _db.commit()
+
+
+# ───────────── GIFT CARDS ─────────────
+async def get_gift(code: str):
+    cur = await _db.execute("SELECT * FROM gift_cards WHERE code = ?", (code,))
+    row = await cur.fetchone()
+    return dict(row) if row else None
+
+
+async def redeem_gift(code: str, user_id: int):
+    await _db.execute(
+        "UPDATE gift_cards SET redeemed_by = ?, redeemed_at = CURRENT_TIMESTAMP WHERE code = ?",
+        (user_id, code),
+    )
+    await _db.commit()
+
+
+async def create_gift(code: str, tipo: str, valor: float = 0, product_id: int | None = None):
+    await _db.execute(
+        "INSERT INTO gift_cards (code, tipo, valor, product_id) VALUES (?, ?, ?, ?)",
+        (code, tipo, valor, product_id),
+    )
     await _db.commit()
 
 
@@ -229,11 +324,16 @@ async def seed_products():
             (name, desc, price, stock, emoji),
         )
 
-    # Estoque demo para CANVA PRO (id=1)
     for i in range(1, 4):
         await _db.execute(
             "INSERT INTO stock_items (product_id, email, password) VALUES (?, ?, ?)",
             (1, f"canva_cliente{i}@larizinha.com", f"SenhaForte#{i}2026"),
         )
+
+    # Gift card de exemplo
+    await _db.execute(
+        "INSERT OR IGNORE INTO gift_cards (code, tipo, valor) VALUES (?, ?, ?)",
+        ("LARI2026", "saldo", 10.00),
+    )
 
     await _db.commit()
