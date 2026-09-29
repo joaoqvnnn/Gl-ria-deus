@@ -1,23 +1,28 @@
+from urllib.parse import quote
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
-from config import CHANNEL_LINK, SUPPORT_LINK
+from config import CHANNEL_LINK, SUPPORT_LINK, SUPPORT_MESSAGE
+
+
+# ═══════════════════════════════════════════════
+# HELPERS
+# ═══════════════════════════════════════════════
+def _support_url() -> str:
+    """URL do suporte com mensagem pré-preenchida."""
+    if not SUPPORT_LINK:
+        return "https://t.me/"
+    return f"{SUPPORT_LINK}?text={quote(SUPPORT_MESSAGE)}"
 
 
 # ═══════════════════════════════════════════════
 # MÓDULO 1 — GATE, MENU, CATÁLOGO, PRODUTO
 # ═══════════════════════════════════════════════
 
-# ────────────────────────────────────────────────
-# 🔐 1. GATE DE ENTRADA
-# ────────────────────────────────────────────────
 def gate_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("➡️ ENTRAR NO CANAL", url=CHANNEL_LINK)]
     ])
 
 
-# ────────────────────────────────────────────────
-# 🏠 2. BOAS-VINDAS / MENU PRINCIPAL
-# ────────────────────────────────────────────────
 def main_menu_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("🛍 Comprar Produtos", callback_data="menu:catalog")],
@@ -30,7 +35,7 @@ def main_menu_keyboard() -> InlineKeyboardMarkup:
             InlineKeyboardButton("👥 Afiliados", callback_data="menu:affiliates"),
             InlineKeyboardButton("🏆 Top Compradores", callback_data="menu:top"),
         ],
-        [InlineKeyboardButton("📩 Atendimento", url=SUPPORT_LINK)],
+        [InlineKeyboardButton("📩 Atendimento", url=_support_url())],
         [
             InlineKeyboardButton("🤖 Sobre o Bot", callback_data="menu:about"),
             InlineKeyboardButton("🔎 Pesquisar Serviços", callback_data="menu:search"),
@@ -38,9 +43,6 @@ def main_menu_keyboard() -> InlineKeyboardMarkup:
     ])
 
 
-# ────────────────────────────────────────────────
-# 📦 3. CATÁLOGO DE PRODUTOS
-# ────────────────────────────────────────────────
 def catalog_keyboard(products: list[dict]) -> InlineKeyboardMarkup:
     rows = []
     for p in products:
@@ -53,9 +55,6 @@ def catalog_keyboard(products: list[dict]) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(rows)
 
 
-# ────────────────────────────────────────────────
-# 🎯 4. TELA DO PRODUTO
-# ────────────────────────────────────────────────
 def product_keyboard(pid: int) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("🛒 COMPRAR", callback_data=f"buy:{pid}")],
@@ -64,9 +63,6 @@ def product_keyboard(pid: int) -> InlineKeyboardMarkup:
     ])
 
 
-# ────────────────────────────────────────────────
-# 🔙 BOTÃO VOLTAR GENÉRICO
-# ────────────────────────────────────────────────
 def back_to_menu_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("⬅️ VOLTAR", callback_data="menu:home")]
@@ -77,9 +73,6 @@ def back_to_menu_keyboard() -> InlineKeyboardMarkup:
 # MÓDULO 2 — COMPRA, PIX, MULTI, ENTREGA
 # ═══════════════════════════════════════════════
 
-# ────────────────────────────────────────────────
-# 💸 5. SALDO INSUFICIENTE
-# ────────────────────────────────────────────────
 def insufficient_keyboard(product_id: int, quantity: int, total: float) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([
         [InlineKeyboardButton(
@@ -90,9 +83,6 @@ def insufficient_keyboard(product_id: int, quantity: int, total: float) -> Inlin
     ])
 
 
-# ────────────────────────────────────────────────
-# 💠 6. QR CODE (PIX de compra)
-# ────────────────────────────────────────────────
 def pix_keyboard(pix_id: str) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("📋 Copiar PIX", callback_data=f"pix:copy:{pix_id}")],
@@ -101,9 +91,6 @@ def pix_keyboard(pix_id: str) -> InlineKeyboardMarkup:
     ])
 
 
-# ────────────────────────────────────────────────
-# 🛒 7. COMPRAR MAIS DE UM
-# ────────────────────────────────────────────────
 def multi_confirm_keyboard(product_id: int, qty: int) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([
         [InlineKeyboardButton(
@@ -114,9 +101,6 @@ def multi_confirm_keyboard(product_id: int, qty: int) -> InlineKeyboardMarkup:
     ])
 
 
-# ────────────────────────────────────────────────
-# ✅ 9. ENTREGA DO PRODUTO
-# ────────────────────────────────────────────────
 def delivery_keyboard(purchase_id: str, activate_url: str) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("🔓 VER PRODUTO", callback_data=f"delivery:reveal:{purchase_id}")],
@@ -134,9 +118,6 @@ def delivery_revealed_keyboard(purchase_id: str, activate_url: str) -> InlineKey
 # MÓDULO 3 — PERFIL, HISTÓRICO, GIFT, DADOS, RECARGA
 # ═══════════════════════════════════════════════
 
-# ────────────────────────────────────────────────
-# 👤 8. MEU PERFIL
-# ────────────────────────────────────────────────
 def profile_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("📜 Histórico de Compras", callback_data="profile:history")],
@@ -146,9 +127,6 @@ def profile_keyboard() -> InlineKeyboardMarkup:
     ])
 
 
-# ────────────────────────────────────────────────
-# 📜 9. HISTÓRICO DE COMPRAS
-# ────────────────────────────────────────────────
 def history_empty_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("🟢 Apenas Ativas", callback_data="hist:active:0")],
@@ -197,9 +175,6 @@ def history_item_keyboard(
     return InlineKeyboardMarkup(rows)
 
 
-# ────────────────────────────────────────────────
-# 🎁 10. GIFT CARD
-# ────────────────────────────────────────────────
 def gift_cancel_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("❌ Cancelar", callback_data="gift:cancel")],
@@ -212,9 +187,6 @@ def gift_success_keyboard() -> InlineKeyboardMarkup:
     ])
 
 
-# ────────────────────────────────────────────────
-# ✏️ 11. ALTERAR DADOS
-# ────────────────────────────────────────────────
 def alter_data_keyboard(user: dict) -> InlineKeyboardMarkup:
     whats = user.get("whatsapp") or "Não cadastrado"
     label = f"📱 WhatsApp: {whats}"
@@ -232,9 +204,6 @@ def alter_data_cancel_keyboard() -> InlineKeyboardMarkup:
     ])
 
 
-# ────────────────────────────────────────────────
-# 💠 12. RECARREGAR SALDO
-# ────────────────────────────────────────────────
 def topup_menu_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("💠 PIX RÁPIDO", callback_data="topup:pix")],
@@ -261,9 +230,6 @@ def topup_success_keyboard() -> InlineKeyboardMarkup:
 # MÓDULO 4 — AFILIADOS, SAQUES, TOP, PESQUISA
 # ═══════════════════════════════════════════════
 
-# ────────────────────────────────────────────────
-# 👥 13. AFILIADOS
-# ────────────────────────────────────────────────
 def affiliates_inactive_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("✅ Me Filiar", callback_data="aff:join")],
@@ -280,9 +246,6 @@ def affiliates_active_keyboard() -> InlineKeyboardMarkup:
     ])
 
 
-# ────────────────────────────────────────────────
-# 💸 15. SAQUES
-# ────────────────────────────────────────────────
 def withdraw_type_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("📧 Email", callback_data="wd:type:email")],
@@ -321,9 +284,6 @@ def withdraw_success_keyboard(wid: str) -> InlineKeyboardMarkup:
     ])
 
 
-# ────────────────────────────────────────────────
-# 🏆 19. TOP COMPRADORES
-# ────────────────────────────────────────────────
 def top_keyboard(current: str = "compras") -> InlineKeyboardMarkup:
     def check(key):
         return "✅ " if key == current else ""
@@ -338,11 +298,10 @@ def top_keyboard(current: str = "compras") -> InlineKeyboardMarkup:
 
 
 # ═══════════════════════════════════════════════
-# AÇÕES DIRETAS (Direct Actions)
+# AÇÕES DIRETAS
 # ═══════════════════════════════════════════════
 
 def direct_product_keyboard(product_id: int) -> InlineKeyboardMarkup:
-    """Botão único que abre a tela do produto (sem /start)."""
     return InlineKeyboardMarkup([
         [InlineKeyboardButton(
             "🛒 Comprar agora",
@@ -352,7 +311,6 @@ def direct_product_keyboard(product_id: int) -> InlineKeyboardMarkup:
 
 
 def direct_product_two_keyboard(product_id: int) -> InlineKeyboardMarkup:
-    """Comprar agora + Ver detalhes (ambos vão pro produto)."""
     return InlineKeyboardMarkup([
         [InlineKeyboardButton(
             "🛒 Comprar agora",
@@ -390,19 +348,6 @@ def direct_start_keyboard() -> InlineKeyboardMarkup:
 
 
 def direct_custom_keyboard(buttons: list[list[dict]]) -> InlineKeyboardMarkup:
-    """
-    Cria teclado customizado a partir de uma lista.
-
-    Cada botão: {"text": "...", "action": "...", "url": "..."}
-      - Se tiver "url", vira botão URL.
-      - Senão, callback_data = action.
-
-    Exemplo de uso (admin):
-        [
-          [{"text":"Comprar agora","action":"direct:product:3"}],
-          [{"text":"Ver catálogo","action":"direct:catalog"}],
-        ]
-    """
     rows = []
     for row in buttons:
         line = []
