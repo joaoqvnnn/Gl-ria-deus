@@ -1,11 +1,12 @@
 import aiosqlite
+import uuid
+from datetime import datetime, timedelta
 from config import DB_PATH
 
 _db: aiosqlite.Connection | None = None
 
 
 async def init_db():
-    """Cria conexão e tabelas."""
     global _db
     _db = await aiosqlite.connect(DB_PATH)
     _db.row_factory = aiosqlite.Row
@@ -30,7 +31,42 @@ async def init_db():
             emoji        TEXT DEFAULT '📦',
             sold         INTEGER DEFAULT 0,
             guarantee    INTEGER DEFAULT 180,
+            activate_url TEXT DEFAULT 'https://t.me/',
             active       INTEGER DEFAULT 1,
+            created_at   TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );
+
+        CREATE TABLE IF NOT EXISTS stock_items (
+            id           INTEGER PRIMARY KEY AUTOINCREMENT,
+            product_id   INTEGER NOT NULL,
+            email        TEXT,
+            password     TEXT,
+            used         INTEGER DEFAULT 0,
+            created_at   TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );
+
+        CREATE TABLE IF NOT EXISTS purchases (
+            id           TEXT PRIMARY KEY,
+            user_id      INTEGER NOT NULL,
+            product_id   INTEGER NOT NULL,
+            product_name TEXT,
+            quantity     INTEGER DEFAULT 1,
+            total        REAL,
+            email        TEXT,
+            password     TEXT,
+            created_at   TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            expires_at   TIMESTAMP
+        );
+
+        CREATE TABLE IF NOT EXISTS pix_pending (
+            id           TEXT PRIMARY KEY,
+            user_id      INTEGER NOT NULL,
+            valor        REAL NOT NULL,
+            tipo         TEXT NOT NULL,
+            product_id   INTEGER,
+            quantity     INTEGER,
+            copia_cola   TEXT,
+            status       TEXT DEFAULT 'pending',
             created_at   TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         );
         """
@@ -39,7 +75,7 @@ async def init_db():
 
 
 # ───────────── USERS ─────────────
-async def get_or_create_user(user_id: int, username: str | None, first_name: str | None) -> dict:
+async def get_or_create_user(user_id, username, first_name):
     cur = await _db.execute("SELECT * FROM users WHERE user_id = ?", (user_id,))
     row = await cur.fetchone()
     if row is None:
@@ -53,35 +89,116 @@ async def get_or_create_user(user_id: int, username: str | None, first_name: str
     return dict(row)
 
 
-async def get_user(user_id: int) -> dict | None:
+async def get_user(user_id):
     cur = await _db.execute("SELECT * FROM users WHERE user_id = ?", (user_id,))
     row = await cur.fetchone()
     return dict(row) if row else None
 
 
+async def update_balance(user_id: int, delta: float):
+    await _db.execute(
+        "UPDATE users SET balance = balance + ? WHERE user_id = ?",
+        (delta, user_id),
+    )
+    await _db.commit()
+
+
 # ───────────── PRODUCTS ─────────────
-async def get_products() -> list[dict]:
+async def get_products():
     cur = await _db.execute("SELECT * FROM products WHERE active = 1 ORDER BY id ASC")
-    rows = await cur.fetchall()
-    return [dict(r) for r in rows]
+    return [dict(r) for r in await cur.fetchall()]
 
 
-async def get_product(pid: int) -> dict | None:
+async def get_product(pid: int):
     cur = await _db.execute("SELECT * FROM products WHERE id = ?", (pid,))
     row = await cur.fetchone()
     return dict(row) if row else None
 
 
-async def add_product(name, description, price, stock, emoji="📦"):
+async def decrement_stock(pid: int, qty: int):
     await _db.execute(
-        "INSERT INTO products (name, description, price, stock, emoji) VALUES (?, ?, ?, ?, ?)",
-        (name, description, price, stock, emoji),
+        "UPDATE products SET stock = MAX(stock - ?, 0), sold = sold + ? WHERE id = ?",
+        (qty, qty, pid),
     )
     await _db.commit()
 
 
+async def add_product(name, description, price, stock, emoji="📦", activate_url="https://t.me/"):
+    await _db.execute(
+        "INSERT INTO products (name, description, price, stock, emoji, activate_url) "
+        "VALUES (?, ?, ?, ?, ?, ?)",
+        (name, description, price, stock, emoji, activate_url),
+    )
+    await _db.commit()
+
+
+# ───────────── STOCK ITEMS ─────────────
+async def take_stock_items(product_id: int, qty: int):
+    """Pega qty itens não usados e marca como usados. Retorna lista."""
+    cur = await _db.execute(
+        "SELECT * FROM stock_items WHERE product_id = ? AND used = 0 LIMIT ?",
+        (product_id, qty),
+    )
+    rows = await cur.fetchall()
+    items = [dict(r) for r in rows]
+    if items:
+        ids = [it["id"] for it in items]
+        placeholders = ",".join("?" for _ in ids)
+        await _db.execute(
+            f"UPDATE stock_items SET used = 1 WHERE id IN ({placeholders})", ids
+        )
+        await _db.commit()
+    return items
+
+
+# ───────────── PURCHASES ─────────────
+async def create_purchase(user_id, product_id, product_name, quantity, total, email, password, days=30):
+    purchase_id = str(uuid.uuid4())
+    expires = (datetime.now() + timedelta(days=days)).strftime("%Y-%m-%d %H:%M:%S")
+    await _db.execute(
+        "INSERT INTO purchases (id, user_id, product_id, product_name, quantity, total, email, password, expires_at) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        (purchase_id, user_id, product_id, product_name, quantity, total, email, password, expires),
+    )
+    await _db.commit()
+    cur = await _db.execute("SELECT * FROM purchases WHERE id = ?", (purchase_id,))
+    return dict(await cur.fetchone())
+
+
+async def get_purchase(pid: str):
+    cur = await _db.execute("SELECT * FROM purchases WHERE id = ?", (pid,))
+    row = await cur.fetchone()
+    return dict(row) if row else None
+
+
+# ───────────── PIX ─────────────
+async def create_pix(pix_id, user_id, valor, tipo, product_id, quantity, copia_cola):
+    await _db.execute(
+        "INSERT INTO pix_pending (id, user_id, valor, tipo, product_id, quantity, copia_cola) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?)",
+        (pix_id, user_id, valor, tipo, product_id, quantity, copia_cola),
+    )
+    await _db.commit()
+
+
+async def get_pix(pix_id):
+    cur = await _db.execute("SELECT * FROM pix_pending WHERE id = ?", (pix_id,))
+    row = await cur.fetchone()
+    return dict(row) if row else None
+
+
+async def mark_pix_paid(pix_id):
+    await _db.execute("UPDATE pix_pending SET status = 'paid' WHERE id = ?", (pix_id,))
+    await _db.commit()
+
+
+async def cancel_pix(pix_id):
+    await _db.execute("UPDATE pix_pending SET status = 'cancelled' WHERE id = ?", (pix_id,))
+    await _db.commit()
+
+
+# ───────────── SEED ─────────────
 async def seed_products():
-    """Popula o catálogo inicial na primeira execução."""
     cur = await _db.execute("SELECT COUNT(*) AS c FROM products")
     row = await cur.fetchone()
     if row["c"] > 0:
@@ -106,10 +223,17 @@ async def seed_products():
         ("P2P ANTI-TRAVAMENTO", "Sistema anti-travamento P2P.", 20.00, 4, "🛡"),
         ("SKY + Hbo + Paramount + Premiere", "Combo SKY completo.", 9.90, 5, "🛰"),
     ]
-
     for name, desc, price, stock, emoji in catalogo:
         await _db.execute(
             "INSERT INTO products (name, description, price, stock, emoji) VALUES (?, ?, ?, ?, ?)",
             (name, desc, price, stock, emoji),
         )
+
+    # Estoque demo para CANVA PRO (id=1)
+    for i in range(1, 4):
+        await _db.execute(
+            "INSERT INTO stock_items (product_id, email, password) VALUES (?, ?, ?)",
+            (1, f"canva_cliente{i}@larizinha.com", f"SenhaForte#{i}2026"),
+        )
+
     await _db.commit()
