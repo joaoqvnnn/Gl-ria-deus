@@ -6,6 +6,7 @@ from telegram.ext import ContextTypes
 
 from config import CHANNEL_ID
 from database import db
+from handlers import _state
 from keyboards import menus
 from services import deeplink
 from texts import messages
@@ -46,7 +47,7 @@ async def _show_welcome(
     via_edit_message_id: int | None = None,
 ):
     text = messages.welcome_text(user)
-    kb = menus.main_menu_keyboard(user_id=user["user_id"])  # ← passa o ID
+    kb = menus.main_menu_keyboard(user_id=user["user_id"])
 
     if via_edit_message_id:
         try:
@@ -141,6 +142,9 @@ async def _handle_payload(
 # /start
 # ═══════════════════════════════════════════════
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    # 🧹 SEMPRE limpa qualquer state preso antes de começar
+    _state.clear_all(context.user_data)
+
     user = update.effective_user
     u = await db.get_or_create_user(user.id, user.username, user.first_name)
 
