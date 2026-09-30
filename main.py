@@ -17,6 +17,7 @@ from telegram.ext import (
     CallbackQueryHandler,
     ChatMemberHandler,
     CommandHandler,
+    ContextTypes,
     InlineQueryHandler,
     MessageHandler,
     TypeHandler,
@@ -775,10 +776,6 @@ async def myid_command(update: Update, context):
 # ROTEADOR DE TEXTO LIVRE
 # ═══════════════════════════════════════════════
 async def _text_router(update: Update, context):
-    """
-    Encaminha a mensagem de texto pro handler correto conforme o estado
-    em context.user_data. Admin primeiro, usuário comum depois.
-    """
     ud = context.user_data
 
     # ─── ADMIN
@@ -859,7 +856,7 @@ async def _text_router(update: Update, context):
 
 
 # ═══════════════════════════════════════════════
-# ROTEADOR DE MÍDIA (foto/vídeo)
+# ROTEADOR DE MÍDIA
 # ═══════════════════════════════════════════════
 async def _media_router(update: Update, context):
     ud = context.user_data
@@ -895,17 +892,15 @@ async def _open_miniapp(update: Update, context):
 
 
 # ═══════════════════════════════════════════════
-# BUILD APP — REGISTRO DE HANDLERS
+# BUILD APP
 # ═══════════════════════════════════════════════
 def build_app():
     app = ApplicationBuilder().token(BOT_TOKEN).post_init(post_init).build()
 
-    # ─── MIDDLEWARE PRIMEIRO
+    # ─── MIDDLEWARE
     app.add_handler(TypeHandler(Update, _middleware), group=-1)
 
-    # ═══════════════════════════════════════════
-    # COMANDOS
-    # ═══════════════════════════════════════════
+    # ─── COMANDOS
     app.add_handler(CommandHandler("start", start.start_command))
     app.add_handler(CommandHandler("pago", mark_paid))
     app.add_handler(CommandHandler("cancelar", cancelar))
@@ -925,11 +920,7 @@ def build_app():
     # ─── INLINE
     app.add_handler(InlineQueryHandler(inline.inline_query))
 
-    # ═══════════════════════════════════════════
-    # ADMIN — Callbacks (específicos antes dos genéricos)
-    # ═══════════════════════════════════════════
-
-    # ─── ADMIN 1 — Dashboard / Usuários / Manutenção / Logs
+    # ─── ADMIN 1
     app.add_handler(CallbackQueryHandler(admin1.admin_home_cb,             pattern=r"^admin:home$"))
     app.add_handler(CallbackQueryHandler(admin1.admin_users_cb,            pattern=r"^admin:users$"))
     app.add_handler(CallbackQueryHandler(admin1.admin_user_search_prompt,  pattern=r"^admin:user_search$"))
@@ -944,51 +935,44 @@ def build_app():
     app.add_handler(CallbackQueryHandler(admin1.admin_toggle_maintenance_cb, pattern=r"^admin:toggle_maintenance$"))
     app.add_handler(CallbackQueryHandler(admin1.admin_logs_cb,             pattern=r"^admin:logs$"))
 
-    # ─── ADMIN 2 — Vendas / Gifts / Saques / Afiliados
+    # ─── ADMIN 2
     app.add_handler(CallbackQueryHandler(admin2.admin_purchases_cb,        pattern=r"^admin:purchases$"))
     app.add_handler(CallbackQueryHandler(admin2.admin_purchase_search_prompt, pattern=r"^admin:purchase_search$"))
     app.add_handler(CallbackQueryHandler(admin2.admin_purchase_cb,         pattern=r"^admin:purchase:[^:]+$"))
     app.add_handler(CallbackQueryHandler(admin2.admin_refund_cb,           pattern=r"^admin:refund:[^:]+$"))
     app.add_handler(CallbackQueryHandler(admin2.admin_resend_cb,           pattern=r"^admin:resend:[^:]+$"))
-
     app.add_handler(CallbackQueryHandler(admin2.admin_gifts_cb,            pattern=r"^admin:gifts$"))
     app.add_handler(CallbackQueryHandler(admin2.admin_gift_create_prompt,  pattern=r"^admin:gift_create$"))
     app.add_handler(CallbackQueryHandler(admin2.admin_gift_tipo_cb,        pattern=r"^admin:gift_tipo:"))
     app.add_handler(CallbackQueryHandler(admin2.admin_gift_del_cb,         pattern=r"^admin:gift_del:"))
     app.add_handler(CallbackQueryHandler(admin2.admin_gift_cb,             pattern=r"^admin:gift:[^:]+$"))
-
     app.add_handler(CallbackQueryHandler(admin2.admin_withdrawals_cb,      pattern=r"^admin:withdrawals$"))
     app.add_handler(CallbackQueryHandler(admin2.admin_wd_approve_cb,       pattern=r"^admin:wd_ok:[^:]+$"))
     app.add_handler(CallbackQueryHandler(admin2.admin_wd_reject_cb,        pattern=r"^admin:wd_no:[^:]+$"))
     app.add_handler(CallbackQueryHandler(admin2.admin_withdrawal_cb,       pattern=r"^admin:wd:[^:]+$"))
-
     app.add_handler(CallbackQueryHandler(admin2.admin_affiliates_cb,       pattern=r"^admin:affiliates$"))
     app.add_handler(CallbackQueryHandler(admin2.admin_aff_on_cb,           pattern=r"^admin:aff_on:\d+$"))
     app.add_handler(CallbackQueryHandler(admin2.admin_aff_off_cb,          pattern=r"^admin:aff_off:\d+$"))
     app.add_handler(CallbackQueryHandler(admin2.admin_affiliate_cb,        pattern=r"^admin:aff:\d+$"))
 
-    # ─── ADMIN 3 — Estatísticas / Config / Textos / Botões / Banner
+    # ─── ADMIN 3
     app.add_handler(CallbackQueryHandler(admin3.admin_stats_cb,            pattern=r"^admin:stats$"))
     app.add_handler(CallbackQueryHandler(admin3.admin_stats_daily_cb,      pattern=r"^admin:stats_daily$"))
     app.add_handler(CallbackQueryHandler(admin3.admin_stats_products_cb,   pattern=r"^admin:stats_products$"))
     app.add_handler(CallbackQueryHandler(admin3.admin_stats_spenders_cb,   pattern=r"^admin:stats_spenders$"))
-
     app.add_handler(CallbackQueryHandler(admin3.admin_config_cb,           pattern=r"^admin:config$"))
     app.add_handler(CallbackQueryHandler(admin3.admin_cfg_edit_prompt,     pattern=r"^admin:cfg:"))
-
     app.add_handler(CallbackQueryHandler(admin3.admin_texts_cb,            pattern=r"^admin:texts$"))
     app.add_handler(CallbackQueryHandler(admin3.admin_text_edit_prompt,    pattern=r"^admin:text_edit:"))
     app.add_handler(CallbackQueryHandler(admin3.admin_text_cb,             pattern=r"^admin:text:[^:]+$"))
-
     app.add_handler(CallbackQueryHandler(admin3.admin_buttons_cb,          pattern=r"^admin:buttons$"))
     app.add_handler(CallbackQueryHandler(admin3.admin_btn_edit_prompt,     pattern=r"^admin:btn_edit:"))
     app.add_handler(CallbackQueryHandler(admin3.admin_button_cb,           pattern=r"^admin:btn:[^:]+$"))
-
     app.add_handler(CallbackQueryHandler(admin3.admin_banner_cb,           pattern=r"^admin:banner$"))
     app.add_handler(CallbackQueryHandler(admin3.admin_banner_new_cb,       pattern=r"^admin:banner_new$"))
     app.add_handler(CallbackQueryHandler(admin3.admin_banner_del_cb,       pattern=r"^admin:banner_del$"))
 
-    # ─── ADMIN 4 — Produtos completos / Estoque
+    # ─── ADMIN 4
     app.add_handler(CallbackQueryHandler(admin4.admin_new_product_cb,      pattern=r"^admin:new_product$"))
     app.add_handler(CallbackQueryHandler(admin4.admin_prod_edit_prompt,    pattern=r"^admin:prod_edit:"))
     app.add_handler(CallbackQueryHandler(admin4.admin_prod_stock_cb,       pattern=r"^admin:prod_stock:\d+$"))
@@ -1000,7 +984,7 @@ def build_app():
     app.add_handler(CallbackQueryHandler(admin4.admin_product_v2_cb,       pattern=r"^admin:product:\d+$"))
     app.add_handler(CallbackQueryHandler(admin4.admin_products_v2_cb,      pattern=r"^admin:products$"))
 
-    # ─── ADMIN 5 — Carrinhos / Msg direta / Backup
+    # ─── ADMIN 5
     app.add_handler(CallbackQueryHandler(admin5.admin_abandoned_cb,        pattern=r"^admin:abandoned$"))
     app.add_handler(CallbackQueryHandler(admin5.admin_abandoned_send_cb,   pattern=r"^admin:abandoned_send:\d+:\d+$"))
     app.add_handler(CallbackQueryHandler(admin5.admin_abandoned_del_cb,    pattern=r"^admin:abandoned_del:\d+:\d+$"))
@@ -1008,7 +992,7 @@ def build_app():
     app.add_handler(CallbackQueryHandler(admin5.admin_msg_user_prompt,     pattern=r"^admin:msg_user:\d+$"))
     app.add_handler(CallbackQueryHandler(admin5.admin_backup_cb,           pattern=r"^admin:backup$"))
 
-    # ─── ADMIN 6 — Sub-admins / Export
+    # ─── ADMIN 6
     app.add_handler(CallbackQueryHandler(admin6.admin_subadmins_cb,        pattern=r"^admin:subadmins$"))
     app.add_handler(CallbackQueryHandler(admin6.admin_sub_add_cb,          pattern=r"^admin:sub_add$"))
     app.add_handler(CallbackQueryHandler(admin6.admin_sub_edit_cb,         pattern=r"^admin:sub_edit:\d+$"))
@@ -1016,13 +1000,10 @@ def build_app():
     app.add_handler(CallbackQueryHandler(admin6.admin_sub_all_cb,          pattern=r"^admin:sub_all:\d+$"))
     app.add_handler(CallbackQueryHandler(admin6.admin_sub_del_cb,          pattern=r"^admin:sub_del:\d+$"))
     app.add_handler(CallbackQueryHandler(admin6.admin_sub_cb,              pattern=r"^admin:sub:\d+$"))
-
     app.add_handler(CallbackQueryHandler(admin6.admin_export_cb,           pattern=r"^admin:export$"))
     app.add_handler(CallbackQueryHandler(admin6.admin_export_run_cb,       pattern=r"^admin:export:"))
 
-    # ═══════════════════════════════════════════
-    # HANDLERS DE USUÁRIO
-    # ═══════════════════════════════════════════
+    # ─── USUÁRIO
     app.add_handler(CallbackQueryHandler(direct.direct_router, pattern=r"^direct:"))
     app.add_handler(CallbackQueryHandler(delivery.reveal_product, pattern=r"^delivery:reveal:"))
     app.add_handler(CallbackQueryHandler(buy.generate_pix,   pattern=r"^pix:gen:"))
@@ -1061,14 +1042,10 @@ def build_app():
     app.add_handler(CallbackQueryHandler(catalog.product_callback, pattern=r"^prod:"))
     app.add_handler(CallbackQueryHandler(menu.menu_router))
 
-    # ═══════════════════════════════════════════
-    # TEXTO LIVRE
-    # ═══════════════════════════════════════════
+    # ─── TEXTO LIVRE
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, _text_router))
 
-    # ═══════════════════════════════════════════
-    # MÍDIA (foto/vídeo) — Banner + Broadcast com mídia
-    # ═══════════════════════════════════════════
+    # ─── MÍDIA
     app.add_handler(MessageHandler(filters.PHOTO | filters.VIDEO, _media_router))
 
     return app
