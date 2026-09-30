@@ -1,4 +1,32 @@
 from datetime import datetime
+from texts import cache
+
+
+# ═══════════════════════════════════════════════
+# HELPER — substituição segura de variáveis
+# ═══════════════════════════════════════════════
+class _SafeDict(dict):
+    def __missing__(self, key):
+        return "{" + key + "}"
+
+
+def _render(tpl: str, **kwargs) -> str:
+    """
+    Substitui variáveis no template. Também injeta:
+      - store_name (do config)
+      - support_link
+      - bot_username
+    """
+    data = {
+        "store_name":   cache.get_config("store_name", "Minha Loja"),
+        "support_link": cache.get_config("telegram_link", ""),
+        "bot_username": cache.get_config("bot_username", ""),
+        **kwargs,
+    }
+    try:
+        return tpl.format_map(_SafeDict(data))
+    except Exception:
+        return tpl
 
 
 # ═══════════════════════════════════════════════
@@ -6,64 +34,43 @@ from datetime import datetime
 # ═══════════════════════════════════════════════
 
 def gate_text() -> str:
-    return "❗ <b>Para utilizar nosso serviço é obrigatório que você entre no nosso grupo.</b>"
+    return cache.get_text(
+        "gate",
+        "❗ <b>Para utilizar nosso serviço é obrigatório que você entre no nosso grupo.</b>",
+    )
 
 
 def welcome_text(user: dict) -> str:
-    return (
-        "📡 <b>Bem-vindo à Larizinha Store!</b>\n"
-        "✨ A sua central de streamings com entrega 100% automática.\n"
-        "Pagou, recebeu. Sem filas, sem precisar falar com atendente, 24 horas por dia! ⚡\n\n"
-        "🛡 <b>Segurança e Suporte:</b>\n"
-        "Mais de 12.000 clientes já passaram por aqui.\n"
-        "Participe da nossa comunidade e veja as referências\n\n"
-        "● <b>Seus Dados:</b>\n"
-        f"├ 👤 ID: <code>{user['user_id']}</code>\n"
-        f"└ 💰 Saldo Atual: <b>R$ {float(user['balance']):.2f}</b>\n\n"
-        "👇 <b>COMO COMEÇAR:</b>\n"
-        "Clique no botão \"🛍 Comprar Produtos\" abaixo para ver nosso catálogo e escolher sua tela!"
+    tpl = cache.get_text("welcome", "")
+    return _render(
+        tpl,
+        user_id=user["user_id"],
+        balance=float(user["balance"]),
     )
 
 
 def catalog_text(user: dict) -> str:
-    return (
-        "⚡ <b>Lari Contas | Catálogo de Serviços</b>\n"
-        "────────────────────────\n"
-        f"💰 | Saldo da Carteira: <b>R$ {float(user['balance']):.2f}</b>\n\n"
-        "⬇️ Selecione uma categoria abaixo para ver nossos planos:"
-    )
+    tpl = cache.get_text("catalog", "")
+    return _render(tpl, balance=float(user["balance"]))
 
 
 def product_text(user: dict, product: dict) -> str:
-    price = float(product["price"])
-    stock = int(product["stock"])
-    sold = int(product.get("sold", 0))
-    guarantee = int(product.get("guarantee", 180))
-
-    return (
-        "🔥 <b>OPORTUNIDADE EXCLUSIVA</b> 🔥\n"
-        f"🚀 <b>{product['name']}</b>\n\n"
-        "🟢 <b>DISPONÍVEL AGORA</b>\n"
-        f"├ 💵 Preço: <b>R$ {price:.2f}</b>\n"
-        f"├ 💰 Seu Saldo: <b>R$ {float(user['balance']):.2f}</b>\n"
-        f"└ 📦 Estoque: <b>{stock}</b>\n\n"
-        "📝 <b>Descrição:</b>\n"
-        f"{product['description']}\n\n"
-        "📊 <b>Estatísticas em tempo real:</b>\n"
-        f"⚡️ Já foram vendidas {sold} unidades!\n"
-        "👀 14 pessoas estão vendo isso agora.\n\n"
-        f"🛡 Garantia: {guarantee} dias\n"
-        "✅ Compra segura. Ao adquirir, concorda com /termos"
+    tpl = cache.get_text("product", "")
+    return _render(
+        tpl,
+        product_name=product["name"],
+        price=float(product["price"]),
+        balance=float(user["balance"]),
+        stock=int(product["stock"]),
+        description=product["description"],
+        sold=int(product.get("sold", 0)),
+        guarantee=int(product.get("guarantee", 180)),
     )
 
 
 def about_text() -> str:
-    return (
-        "🤖 <b>Sobre o Bot</b>\n\n"
-        "Larizinha Store — central de streamings com entrega automática.\n"
-        "Pagou, recebeu. 24h por dia.\n\n"
-        "Para suporte, use o botão 📩 Atendimento."
-    )
+    tpl = cache.get_text("about", "")
+    return _render(tpl)
 
 
 def soon_text(area: str) -> str:
@@ -78,39 +85,29 @@ def insufficient_text(user: dict, product: dict, quantity: int = 1) -> str:
     total = float(product["price"]) * quantity
     saldo = float(user["balance"])
     falta = max(total - saldo, 0)
-    return (
-        "❌ <b>Saldo insuficiente!</b>\n\n"
-        f"💰 Seu saldo: <b>R$ {saldo:.2f}</b>\n"
-        f"💵 Valor do produto: <b>R$ {total:.2f}</b>\n"
-        f"📉 Faltam: <b>R$ {falta:.2f}</b>\n\n"
-        f"💡 Deseja gerar um PIX no valor de <b>R$ {total:.2f}</b> para completar a compra?"
-    )
+    tpl = cache.get_text("insufficient", "")
+    return _render(tpl, saldo=saldo, total=total, falta=falta)
 
 
 def generating_payment_text() -> str:
-    return "⏳ <b>Gerando pagamento...</b>"
+    return cache.get_text("generating_payment", "⏳ <b>Gerando pagamento...</b>")
 
 
 def pix_caption(pix_id: str, valor: float, expira: str) -> str:
-    return (
-        "💠 <b>PIX gerado com sucesso!</b>\n\n"
-        f"💰 Valor: <b>R$ {valor:.2f}</b>\n"
-        f"🎫 ID: <code>{pix_id}</code>\n"
-        f"⏰ Expira em: <b>{expira}</b>\n\n"
-        "Escaneie o QR Code ou use o botão <b>📋 Copiar PIX</b>."
-    )
+    tpl = cache.get_text("pix_caption", "")
+    return _render(tpl, pix_id=pix_id, valor=valor, expira=expira)
 
 
 def not_paid_text() -> str:
-    return (
-        "⚠️ <b>Nosso sistema viu que você não realizou o pagamento</b>\n\n"
-        "Se já pagou, aguarde alguns segundos e clique novamente em "
-        "<b>⏰ AGUARDANDO PAGAMENTO</b>."
-    )
+    return cache.get_text("not_paid", "")
 
 
 def paid_caption() -> str:
-    return "✅ <b>PAGAMENTO CONFIRMADO!</b>"
+    return cache.get_text("paid_caption", "✅ <b>PAGAMENTO CONFIRMADO!</b>")
+
+
+def pix_cancelled_text() -> str:
+    return cache.get_text("pix_cancelled", "❌ <b>PIX cancelado.</b>")
 
 
 def delivery_text(purchase: dict, email: str, password: str, masked: bool = True) -> str:
@@ -130,42 +127,40 @@ def delivery_text(purchase: dict, email: str, password: str, masked: bool = True
     email_show = "•" * 16 if masked else email
     pass_show = "•" * 16 if masked else password
 
-    return (
-        "✅ <b>Produto realizado com sucesso!</b>\n\n"
-        f"⏰ Data da compra: <b>{created_fmt}</b>\n"
-        f"📆 Vencimento: <b>{expires_fmt}</b>\n"
-        f"💰 Valor: <b>R$ {float(purchase['total']):.2f}</b>\n"
-        f"🎫 ID da compra: <code>{purchase['id']}</code>\n"
-        f"⚜️ Serviço: <b>{purchase['product_name']}</b>\n"
-        f"📧 Email: <code>{email_show}</code>\n"
-        f"🔐 Senha: <code>{pass_show}</code>\n"
-        "📃 Nota: Use o botão abaixo para ativar:"
+    tpl = cache.get_text("delivery", "")
+    return _render(
+        tpl,
+        created_fmt=created_fmt,
+        expires_fmt=expires_fmt,
+        total=float(purchase["total"]),
+        purchase_id=purchase["id"],
+        product_name=purchase["product_name"],
+        email_show=email_show,
+        pass_show=pass_show,
     )
 
 
 def multi_qty_text(product: dict) -> str:
-    return (
-        "Quantos logins deseja comprar?\n\n"
-        f"📦 Estoque disponível: <b>{product['stock']}</b>\n\n"
-        "💡 Digite /cancelar a qualquer momento para sair."
-    )
+    tpl = cache.get_text("multi_qty", "")
+    return _render(tpl, stock=int(product["stock"]))
 
 
 def multi_result_text(user: dict, product: dict, qty: int) -> str:
     unit = float(product["price"])
     total = unit * qty
-    return (
-        "🛒 <b>RESULTADO DO PEDIDO</b>\n"
-        f"🚀 <b>{product['name']}</b>\n"
-        f"📦 Quantidade: <b>{qty}</b>\n"
-        f"💵 Preço unitário: <b>R$ {unit:.2f}</b>\n"
-        f"💰 Total: <b>R$ {total:.2f}</b>\n"
-        f"💰 Seu Saldo: <b>R$ {float(user['balance']):.2f}</b>"
+    tpl = cache.get_text("multi_result", "")
+    return _render(
+        tpl,
+        product_name=product["name"],
+        qty=qty,
+        unit=unit,
+        total=total,
+        balance=float(user["balance"]),
     )
 
 
 def multi_cancelled_text() -> str:
-    return "❌ <b>Compra cancelada!</b>\n\nOperação de compra múltipla foi cancelada."
+    return cache.get_text("multi_cancelled", "")
 
 
 # ═══════════════════════════════════════════════
@@ -175,38 +170,25 @@ def multi_cancelled_text() -> str:
 def profile_text(user: dict, stats: dict | None = None) -> str:
     stats = stats or {}
     whatsapp = user.get("whatsapp") or "Não cadastrado"
-    compras = stats.get("compras", 0)
-    gasto = stats.get("gasto", 0.0)
-    pix_in = stats.get("pix_inseridos", 0.0)
-    gifts = stats.get("gifts_valor", 0.0)
-
-    return (
-        "👤 <b>Meu perfil</b>\n\n"
-        "🔍 Veja aqui os detalhes da sua conta:\n\n"
-        "- 👤 <b>Informações:</b>\n"
-        f"🆔 ID da Carteira: <code>{user['user_id']}</code>\n"
-        f"💰 Saldo Atual: <b>R$ {float(user['balance']):.2f}</b>\n"
-        f"📲 Seu Whatsapp: <code>{whatsapp}</code>\n\n"
-        "─── 📊 <b>Suas Movimentações:</b>\n"
-        f"ー 🛒 Compras Realizadas: <b>{compras}</b>\n"
-        f"ー 💰 Total Gasto Em Compras: <b>R$ {gasto:.2f}</b>\n"
-        f"ー 💠 Pix Inseridos: <b>R$ {pix_in:.2f}</b>\n"
-        f"ー 🎁 Gifts Resgatados: <b>R$ {gifts:.2f}</b>"
+    tpl = cache.get_text("profile", "")
+    return _render(
+        tpl,
+        user_id=user["user_id"],
+        balance=float(user["balance"]),
+        whatsapp=whatsapp,
+        compras=stats.get("compras", 0),
+        gasto=stats.get("gasto", 0.0),
+        pix_in=stats.get("pix_inseridos", 0.0),
+        gifts=stats.get("gifts_valor", 0.0),
     )
 
 
 def history_empty_text() -> str:
-    return (
-        "Você não tem compras no bot.\n"
-        "Quando comprar alguma conta, as informações dela ficarão exibidas aqui."
-    )
+    return cache.get_text("history_empty", "")
 
 
 def history_active_empty_text() -> str:
-    return (
-        "Você não tem compras ativas (não vencidas) no bot.\n"
-        "Use o botão abaixo para ver todas as compras."
-    )
+    return cache.get_text("history_active_empty", "")
 
 
 def _fmt_date(s) -> str:
@@ -217,154 +199,117 @@ def _fmt_date(s) -> str:
 
 
 def history_item_text(purchase: dict, idx: int, total: int, page: int, pages: int) -> str:
-    return (
-        f"📦 <b>Compras: {total}</b>\n\n"
-        f"⏰ Data da compra: <b>{_fmt_date(purchase['created_at'])}</b>\n"
-        f"📆 Vencimento: <b>{_fmt_date(purchase['expires_at'])}</b>\n"
-        f"💰 Valor: <b>R$ {float(purchase['total']):.2f}</b>\n"
-        f"🎫 ID da compra: <code>{purchase['id']}</code>\n"
-        f"⚜️ Serviço: <b>{purchase['product_name']}</b>\n"
-        f"📧 Email: <code>{purchase.get('email') or 'N/A'}</code>\n"
-        f"🔐 Senha: <code>{purchase.get('password') or 'N/A'}</code>\n"
-        "📃 Nota: Use o link abaixo para ativar:\n\n"
-        f"<i>Página {page}/{pages}</i>"
+    tpl = cache.get_text("history_item", "")
+    return _render(
+        tpl,
+        total=total,
+        created_fmt=_fmt_date(purchase["created_at"]),
+        expires_fmt=_fmt_date(purchase["expires_at"]),
+        valor=float(purchase["total"]),
+        purchase_id=purchase["id"],
+        product_name=purchase["product_name"],
+        email=purchase.get("email") or "N/A",
+        password=purchase.get("password") or "N/A",
+        page=page,
+        pages=pages,
     )
 
 
 def gift_prompt_text() -> str:
-    return (
-        "🎁 <b>RESGATAR GIFT CARD</b>\n"
-        "Digite o código do seu gift card abaixo:\n"
-        "Exemplo: <code>ABC123XYZ456</code>"
-    )
+    return cache.get_text("gift_prompt", "")
 
 
 def gift_invalid_text() -> str:
-    return "❌ <b>Gift não encontrado.</b>\n\nVerifique o código e tente novamente."
+    return cache.get_text("gift_invalid", "")
 
 
 def gift_already_used_text() -> str:
-    return "❌ <b>Este gift card já foi resgatado.</b>"
+    return cache.get_text("gift_already_used", "")
 
 
 def gift_success_text(gift: dict, extra: str = "") -> str:
     if gift.get("tipo") == "saldo":
-        return (
-            "🎉 <b>Gift Card resgatado!</b>\n\n"
-            f"💰 Você recebeu <b>R$ {float(gift.get('valor', 0)):.2f}</b> de saldo.\n"
-            f"💼 Saldo atualizado no seu perfil.\n{extra}"
-        )
-    return (
-        "🎉 <b>Gift Card resgatado!</b>\n\n"
-        "🎁 Você ganhou um produto!\n"
-        "Clique em <b>🎁 Usar</b> abaixo para acessá-lo.\n"
-        f"{extra}"
-    )
+        tpl = cache.get_text("gift_success_saldo", "")
+        return _render(tpl, valor=float(gift.get("valor", 0))) + extra
+    return cache.get_text("gift_success_produto", "") + extra
 
 
 def alter_data_text(user: dict) -> str:
     whats = user.get("whatsapp") or "Não cadastrado"
-    return (
-        "✏️ <b>Alterar Dados</b>\n"
-        "Selecione o dado que deseja alterar:\n\n"
-        f"📱 WhatsApp atual: <b>{whats}</b>"
-    )
+    tpl = cache.get_text("alter_data", "")
+    return _render(tpl, whatsapp=whats)
 
 
 def whatsapp_prompt_text() -> str:
-    return (
-        "📱 <b>Envie seu número de WhatsApp</b>\n"
-        "Formato: DDD + Número (apenas números)\n"
-        "Exemplo: <code>11999998888</code>\n\n"
-        "⚠️ Envie <code>remover</code> para remover o número cadastrado."
-    )
+    return cache.get_text("whatsapp_prompt", "")
 
 
 def whatsapp_invalid_text() -> str:
-    return (
-        "❌ <b>Número inválido!</b>\n\n"
-        "Formato: DDD + Número (apenas números).\n"
-        "Exemplo: <code>11999998888</code>"
-    )
+    return cache.get_text("whatsapp_invalid", "")
 
 
 def whatsapp_updated_text(number: str) -> str:
-    return f"✅ <b>WhatsApp atualizado com sucesso!</b>\n\n📱 Novo número: <b>{number}</b>"
+    tpl = cache.get_text("whatsapp_updated", "")
+    return _render(tpl, numero=number)
 
 
 def whatsapp_removed_text() -> str:
-    return "✅ <b>WhatsApp removido com sucesso!</b>"
+    return cache.get_text("whatsapp_removed", "")
 
 
 def topup_menu_text() -> str:
-    return (
-        "💠 Opte por <b>PIX Rápido</b> para que seu saldo seja creditado imediatamente.\n"
-        "💰 Selecione uma opção para recarregar:"
-    )
+    return cache.get_text("topup_menu", "")
 
 
 def topup_value_prompt_text() -> str:
-    return (
-        "ℹ️ <b>Informe o valor que deseja recarregar:</b>\n"
-        "🔻 Recarga mínima: <b>R$ 4,00</b>\n\n"
-        "⚠️ Por favor, envie o valor que deseja recarregar agora.\n"
-        "Ao realizar um depósito você declara ter lido e estar de acordo com nossos /termos\n\n"
-        "🎁 Bônus de recarga: <b>10%</b>\n"
-        "❗ Recarga mínima para ganhar o bônus: <b>R$ 10,00</b>"
-    )
+    return cache.get_text("topup_value_prompt", "")
 
 
 def topup_invalid_value_text() -> str:
-    return (
-        "❌ <b>Valor inválido!</b>\n\n"
-        "Envie um número maior ou igual a <b>R$ 4,00</b>.\n"
-        "Exemplo: <code>20</code> ou <code>20,00</code>"
-    )
+    return cache.get_text("topup_invalid", "")
 
 
-def topup_pix_caption(pix_id: str, valor: float, bonus: float, saldo_atual: float, saldo_futuro: float, expira: str) -> str:
+def topup_pix_caption(pix_id, valor, bonus, saldo_atual, saldo_futuro, expira) -> str:
     bonus_line = f"🎁 Bônus: <b>R$ {bonus:.2f}</b>\n" if bonus > 0 else ""
-    return (
-        "💠 <b>PIX de recarga gerado!</b>\n\n"
-        f"💰 Valor: <b>R$ {valor:.2f}</b>\n"
-        f"{bonus_line}"
-        f"💼 Saldo atual: <b>R$ {saldo_atual:.2f}</b>\n"
-        f"💸 Saldo após o pagamento: <b>R$ {saldo_futuro:.2f}</b>\n"
-        f"🎫 ID: <code>{pix_id}</code>\n"
-        f"⏰ Expira em: <b>{expira}</b>\n\n"
-        "Escaneie o QR Code ou use o botão <b>📋 Copiar PIX</b>."
+    tpl = cache.get_text("topup_pix_caption", "")
+    return _render(
+        tpl,
+        pix_id=pix_id,
+        valor=valor,
+        bonus=bonus,
+        bonus_line=bonus_line,
+        saldo_atual=saldo_atual,
+        saldo_futuro=saldo_futuro,
+        expira=expira,
     )
 
 
-def topup_success_text(valor: float, bonus: float, novo_saldo: float) -> str:
+def topup_success_text(valor, bonus, novo_saldo) -> str:
     bonus_line = f"🎁 Bônus aplicado: <b>R$ {bonus:.2f}</b>\n" if bonus > 0 else ""
-    return (
-        "✅ <b>Recarga realizada com sucesso!</b>\n\n"
-        f"💰 Valor creditado: <b>R$ {valor + bonus:.2f}</b>\n"
-        f"{bonus_line}"
-        f"💼 Novo saldo: <b>R$ {novo_saldo:.2f}</b>"
+    tpl = cache.get_text("topup_success", "")
+    return _render(
+        tpl,
+        valor_total=valor + bonus,
+        bonus=bonus,
+        bonus_line=bonus_line,
+        novo_saldo=novo_saldo,
     )
 
 
 def topup_cancelled_text() -> str:
-    return "❌ <b>Recarga cancelada.</b>"
-
-
-def pix_cancelled_text() -> str:
-    return "❌ <b>PIX cancelado.</b>"
+    return cache.get_text("topup_cancelled", "")
 
 
 # ═══════════════════════════════════════════════
-# MÓDULO 4 — AFILIADOS, SAQUES, TOP, PESQUISA
+# MÓDULO 4 — AFILIADOS, TOP, SAQUES
 # ═══════════════════════════════════════════════
 
 def affiliates_inactive_text() -> str:
-    return (
-        "💰 <b>PROGRAMA DE AFILIADOS</b>\n\n"
-        "⚙️ Status: ❌ <b>Inativo</b>\n"
-        "🧲 Comissão: <b>20.0%</b>\n"
-        "💰 Saque mínimo: <b>R$ 20.00</b>\n\n"
-        "ℹ️ <b>INFO:</b> Seus indicados continuarão gerando comissão para sempre."
+    tpl = cache.get_text("affiliates_inactive", "")
+    return _render(
+        tpl,
+        comissao=int(cache.get_config("affiliate_commission", "20")),
+        saque_min=float(cache.get_config("withdraw_min", "20.00")),
     )
 
 
@@ -374,37 +319,29 @@ def affiliates_active_text(user: dict, stats: dict, link: str) -> str:
     media = stats["media"]
 
     if indicados < 5:
-        nivel = "Iniciante"
-        emoji_nivel = "🌱"
-        meta = 5
+        nivel, emoji_nivel, meta = "Iniciante", "🌱", 5
     elif indicados < 20:
-        nivel = "Bronze"
-        emoji_nivel = "🥉"
-        meta = 20
+        nivel, emoji_nivel, meta = "Bronze", "🥉", 20
     elif indicados < 50:
-        nivel = "Prata"
-        emoji_nivel = "🥈"
-        meta = 50
+        nivel, emoji_nivel, meta = "Prata", "🥈", 50
     else:
-        nivel = "Ouro"
-        emoji_nivel = "🥇"
-        meta = 100
+        nivel, emoji_nivel, meta = "Ouro", "🥇", 100
 
     restantes = max(meta - indicados, 0)
 
-    return (
-        "💰 <b>PROGRAMA DE AFILIADOS</b>\n\n"
-        "⚙️ Status: ✅ <b>Ativo</b>\n"
-        "🧲 Sua comissão: <b>20.0%</b> (de todas recargas do indicado)\n\n"
-        f"👥 Indicações: <b>{indicados}</b>\n"
-        f"🪙 Total ganho: <b>R$ {total:.2f}</b>\n"
-        f"📊 Média: <b>R$ {media:.2f}</b>\n"
-        "💰 Saque mínimo: <b>R$ 20.00</b>\n\n"
-        f"{emoji_nivel}| Nível: <b>{nivel}</b>\n"
-        f"🎯 Próxima meta: <b>{meta}</b> ({restantes} restantes)\n\n"
-        "ℹ️ <b>INFO:</b> Seus indicados continuarão gerando comissão para sempre.\n"
-        "A comissão pode ser alterada a qualquer momento, fique atento aos avisos.\n\n"
-        f"🔗 <b>Seu link:</b>\n<code>{link}</code>"
+    tpl = cache.get_text("affiliates_active", "")
+    return _render(
+        tpl,
+        comissao=int(cache.get_config("affiliate_commission", "20")),
+        saque_min=float(cache.get_config("withdraw_min", "20.00")),
+        indicados=indicados,
+        total=total,
+        media=media,
+        nivel=nivel,
+        emoji_nivel=emoji_nivel,
+        meta=meta,
+        restantes=restantes,
+        link=link,
     )
 
 
@@ -417,8 +354,8 @@ def top_text(rows: list[dict], filtro: str) -> str:
     }
     t = titulos.get(filtro, titulos["compras"])
 
-    linhas = [f"🏆 <b>Ranking dos {t}</b>\n"]
     medals = ["🥇", "🥈", "🥉"]
+    linhas = []
 
     if not rows:
         linhas.append("<i>Sem dados ainda.</i>")
@@ -429,10 +366,134 @@ def top_text(rows: list[dict], filtro: str) -> str:
             total = float(r.get("total") or 0)
 
             if filtro == "compras":
-                # Ranking por produto — mostra nome do produto + pedidos
                 qtd = int(r.get("pedidos") or 0)
                 linhas.append(f"{pos}) {nome} {pos if i < 3 else ''} - Com {qtd} pedidos")
             else:
                 linhas.append(f"{pos}) {nome} — <b>R$ {total:.2f}</b>")
 
-    return "\n".join(linhas)
+    tpl = cache.get_text("top_ranking", "")
+    return _render(tpl, titulo=t, linhas="\n".join(linhas))
+
+
+# ═══════════════════════════════════════════════
+# TELAS DE SAQUE
+# ═══════════════════════════════════════════════
+
+def withdraw_menu_text() -> str:
+    return (
+        "💸 <b>Você deseja sacar?</b>\n"
+        "Para que possamos realizar seu saque, selecione o tipo de chave PIX:"
+    )
+
+
+def withdraw_key_prompt(key_type_label: str) -> str:
+    return f"Cadastre o seu <b>{key_type_label}</b> como chave de saque:"
+
+
+def withdraw_confirm_key_text(user: dict, key_type: str) -> str:
+    pix_key = user.get("pix_key") or "-"
+    name = user.get("pix_name") or (user.get("first_name") or "Usuário")
+    bank = user.get("pix_bank") or "—"
+
+    masked = pix_key
+    if key_type == "cpf":
+        digits = "".join(c for c in pix_key if c.isdigit())
+        if len(digits) == 11:
+            masked = f"***.***.***-{digits[-2:]}"
+
+    return (
+        "Confirma essa é sua chave?\n"
+        f"👤 Nome: <b>{name}</b>\n"
+        f"🏦 Banco: <b>{bank}</b>\n"
+        f"🆔 {key_type.upper()}: <code>{masked}</code>"
+    )
+
+
+def withdraw_confirm_balance_text(balance: float) -> str:
+    return (
+        f"💰 Você possui <b>R$ {balance:.2f}</b> disponível para saque.\n"
+        "💵 Saque mínimo: <b>R$ 20,00</b>"
+    )
+
+
+def greet_by_hour(name: str) -> str:
+    h = datetime.now().hour
+    if 5 <= h < 12:
+        prefix = "🌅 Bom dia"
+    elif 12 <= h < 18:
+        prefix = "🌇 Boa tarde"
+    else:
+        prefix = "🌙 Boa noite"
+    return f"{prefix}, <b>{name}</b>!"
+
+
+def withdraw_amount_prompt(name: str, balance: float) -> str:
+    return (
+        f"{greet_by_hour(name)}\n"
+        "💸 Quantos você quer sacar?\n"
+        f"💰 Saldo disponível: <b>R$ {balance:.2f}</b>\n"
+        "💵 Saque mínimo: <b>R$ 20,00</b>"
+    )
+
+
+def withdraw_password_prompt() -> str:
+    return "🔐 Digite sua senha de 6 dígitos para confirmar o saque:"
+
+
+def withdraw_wrong_password() -> str:
+    return "❌ <b>Senha incorreta!</b>"
+
+
+def withdraw_processing() -> str:
+    return "⏳ <b>Pagamento em processamento...</b>"
+
+
+def withdraw_success_text(wd: dict) -> str:
+    return (
+        "✅ <b>Pagamento realizado com sucesso!</b>\n\n"
+        f"💰 Valor: <b>R$ {float(wd['amount']):.2f}</b>\n"
+        f"🔑 Chave: <code>{wd['pix_key']}</code>\n"
+        f"📄 ID: <code>{wd['id']}</code>\n"
+        f"🕐 {wd.get('created_at', '')}"
+    )
+
+
+def withdraw_invalid_amount() -> str:
+    return (
+        "❌ <b>Valor inválido!</b>\n\n"
+        "Envie um número >= R$ 20,00 e menor/igual ao seu saldo."
+    )
+
+
+def withdraw_no_pin() -> str:
+    return (
+        "🔐 <b>Você ainda não cadastrou uma senha de saque.</b>\n\n"
+        "Use o botão <b>🔐 Cadastrar Senha de Saque</b> no menu de Afiliados."
+    )
+
+
+# ═══════════════════════════════════════════════
+# TELAS DE PESQUISA
+# ═══════════════════════════════════════════════
+
+def search_prompt_text() -> str:
+    return (
+        "🔎 <b>Como procurar um serviço?</b>\n"
+        "Digite: <code>procurar &lt;nome do serviço&gt;</code>"
+    )
+
+
+def search_no_results(term: str) -> str:
+    return f"❌ <b>Nenhum serviço encontrado com \"{term}\"</b>"
+
+
+def search_results_intro(term: str, count: int) -> str:
+    return f"🔎 Encontrados <b>{count}</b> resultados para \"{term}\":"
+
+
+def search_product_card(product: dict) -> str:
+    price = float(product["price"])
+    return (
+        f"<b>{product['emoji']} {product['name']}</b> — R$ {price:.2f}\n"
+        f"{(product.get('description') or '')[:120]}"
+    )
