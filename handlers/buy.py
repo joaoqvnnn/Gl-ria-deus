@@ -16,10 +16,19 @@ from handlers.start import is_member
 # 🛒 COMPRAR (compra única)
 # ═══════════════════════════════════════════════
 async def buy_single(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """
+    Ao clicar em "🛒 COMPRAR" na tela do produto:
+      - Verifica canal obrigatório
+      - Consulta saldo
+      - Se saldo suficiente → processa compra direto (entrega)
+      - Se saldo insuficiente → ENVIA NOVA MENSAGEM com aviso + botão PIX
+        (a mensagem original do produto PERMANECE intacta)
+    """
     query = update.callback_query
     await query.answer()
     user = update.effective_user
 
+    # ─── Verifica canal obrigatório
     if not await is_member(context, user.id):
         await query.answer(
             "⚠️ Entre no canal obrigatório primeiro.",
@@ -27,11 +36,13 @@ async def buy_single(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
 
+    # ─── Parse do ID do produto
     try:
         pid = int(query.data.split(":", 1)[1])
     except (IndexError, ValueError):
         return
 
+    # ─── Puxa usuário e produto
     u = await db.get_or_create_user(user.id, user.username, user.first_name)
     product = await db.get_product(pid)
     if not product:
@@ -44,12 +55,14 @@ async def buy_single(update: Update, context: ContextTypes.DEFAULT_TYPE):
     price = float(product["price"])
     balance = float(u["balance"])
 
+    # ─── SALDO SUFICIENTE → processa compra direto (nova msg + entrega)
     if balance >= price:
         await _process_purchase(
             context, query.message.chat_id, u, product, quantity=1
         )
         return
 
+    # ─── SALDO INSUFICIENTE → ENVIA NOVA MENSAGEM (produto original permanece)
     kb = menus.insufficient_keyboard(pid, 1, price)
     await context.bot.send_message(
         chat_id=query.message.chat_id,
@@ -63,10 +76,17 @@ async def buy_single(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # 💠 GERAR PIX
 # ═══════════════════════════════════════════════
 async def generate_pix(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """
+    Ao clicar em "💠 Gerar PIX de R$ X,XX" na mensagem de saldo insuficiente:
+      1) EDITA a mensagem → "⏳ Gerando pagamento..."
+      2) Aguarda 2 segundos
+      3) ENVIA NOVA MENSAGEM com a Imagem Única do QR Code
+    """
     query = update.callback_query
     await query.answer()
     user = update.effective_user
 
+    # ─── callback_data: pix:gen:{product_id}:{qty}
     try:
         _, _, pid_str, qty_str = query.data.split(":")
         pid = int(pid_str)
@@ -74,6 +94,7 @@ async def generate_pix(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except (ValueError, IndexError):
         return
 
+    # ─── 1) EDITA a mensagem de saldo insuficiente → "Gerando pagamento..."
     try:
         await query.edit_message_text(
             messages.generating_payment_text(),
@@ -82,19 +103,23 @@ async def generate_pix(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception:
         pass
 
+    # ─── Puxa produto e calcula total
     product = await db.get_product(pid)
     if not product:
         return
 
     total = float(product["price"]) * qty
 
+    # ─── Gera PIX
     pix_data = pix_service.gerar_pix(total, product["name"])
     await db.create_pix(
         pix_data["id"], user.id, total, "compra", pid, qty, pix_data["copia_cola"]
     )
 
+    # ─── 2) Aguarda 2 segundos (tempo de processamento)
     await asyncio.sleep(2)
 
+    # ─── 3) ENVIA NOVA MENSAGEM com a imagem única do QR Code
     img = qrcode_gen.generate_pix_image(
         pix_code=pix_data["copia_cola"],
         valor=total,
@@ -132,6 +157,13 @@ async def copy_pix(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # ⏰ AGUARDANDO PAGAMENTO
 # ═══════════════════════════════════════════════
 async def check_pix(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """
+    Ao clicar em "⏰ AGUARDANDO PAGAMENTO":
+      - Se NÃO pagou: ENVIA NOVA MENSAGEM de aviso
+      - Se pagou:
+          · EDITA a mensagem do QR Code atual → QR verde "PAGO"
+          · Segue para a entrega
+    """
     query = update.callback_query
     await query.answer()
 
@@ -141,6 +173,7 @@ async def check_pix(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.answer("PIX não encontrado.", show_alert=True)
         return
 
+    # ─── NÃO pagou → ENVIA NOVA MENSAGEM
     if pix["status"] != "paid":
         await context.bot.send_message(
             chat_id=query.message.chat_id,
@@ -149,10 +182,10 @@ async def check_pix(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
 
-    valor = float(pix["valor"])
+    # ─── PAGOU → EDITA a mensagem do QR Code atual → QR verde "PAGO"
     green_img = qrcode_gen.generate_paid_image(
         pix_code=pix["copia_cola"],
-        valor=valor,
+        valor=float(pix["valor"]),
         titulo="Pagamento Confirmado",
     )
 
@@ -168,16 +201,26 @@ async def check_pix(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception:
         pass
 
+    # ─── Segue para a entrega
     await _finalize_pix_purchase(context, query.message.chat_id, pix)
 
 
 # ═══════════════════════════════════════════════
-# ❌ CANCELAR PIX
+# ❌ CANCELAR PIX (depois de gerado)
 # ═══════════════════════════════════════════════
 async def cancel_pix(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     pix_id = query.data.split(":", 2)[2]
+
+    # Limpa carrinho abandonado (usuário cancelou)
+    try:
+        pix = await db.get_pix(pix_id)
+        if pix:
+            await db.clear_cart_view(pix["user_id"], None)
+    except Exception:
+        pass
+
     await db.cancel_pix(pix_id)
     try:
         await query.edit_message_caption(
@@ -189,11 +232,19 @@ async def cancel_pix(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 # ═══════════════════════════════════════════════
-# ❌ CANCELAR (na tela de saldo insuficiente)
+# ❌ CANCELAR (na tela de saldo insuficiente, antes de gerar PIX)
 # ═══════════════════════════════════════════════
 async def cancel_new_pix(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
+    user = update.effective_user
+
+    # Limpa carrinho abandonado (cancelou explicitamente)
+    try:
+        await db.clear_cart_view(user.id, None)
+    except Exception:
+        pass
+
     try:
         await query.edit_message_text(
             "❌ <b>Compra cancelada.</b>",
@@ -207,6 +258,11 @@ async def cancel_new_pix(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # 🧠 Helpers internos
 # ═══════════════════════════════════════════════
 async def _finalize_pix_purchase(context, chat_id, pix):
+    """
+    Após confirmar pagamento do PIX de compra:
+      - Credita o valor pago no saldo (para depois processar a compra)
+      - Chama _process_purchase (deduz o total e entrega)
+    """
     pid = pix["product_id"]
     qty = int(pix["quantity"] or 1)
     user = await db.get_user(pix["user_id"])
@@ -215,24 +271,42 @@ async def _finalize_pix_purchase(context, chat_id, pix):
     if not user or not product:
         return
 
+    # Credita o valor do PIX (o PIX foi pra completar o saldo)
     await db.update_balance(user["user_id"], +float(pix["valor"]))
+
+    # Recarrega o user com saldo atualizado
     user = await db.get_user(pix["user_id"])
 
+    # Processa a compra (deduz saldo, decrementa estoque, entrega)
     await _process_purchase(context, chat_id, user, product, quantity=qty)
 
 
 async def _process_purchase(context, chat_id, user, product, quantity: int = 1):
+    """
+    Processa a compra:
+      - Deduz saldo
+      - Decrementa estoque
+      - Retira itens do stock_items
+      - Cria registro em purchases
+      - Limpa carrinho abandonado
+      - Envia mensagem de entrega com botões
+    """
     total = float(product["price"]) * quantity
 
+    # ─── Deduz saldo
     await db.update_balance(user["user_id"], -total)
+
+    # ─── Estoque
     await db.decrement_stock(product["id"], quantity)
     items = await db.take_stock_items(product["id"], quantity)
 
+    # ─── Item principal (fallback se não tiver estoque)
     first = items[0] if items else {
         "email": f"conta_{user['user_id']}@larizinha.com",
         "password": "senha_temporaria",
     }
 
+    # ─── Cria registro de compra
     purchase = await db.create_purchase(
         user_id=user["user_id"],
         product_id=product["id"],
@@ -243,11 +317,13 @@ async def _process_purchase(context, chat_id, user, product, quantity: int = 1):
         password=first["password"],
     )
 
+    # ─── Limpa carrinho abandonado (usuário comprou)
     try:
         await db.clear_cart_view(user["user_id"], product["id"])
     except Exception:
         pass
 
+    # ─── Notifica o canal (NOVO ACESSO LIBERADO)
     try:
         await channel_notify.notify_new_access(
             context.bot, user, product, purchase
@@ -255,6 +331,7 @@ async def _process_purchase(context, chat_id, user, product, quantity: int = 1):
     except Exception:
         pass
 
+    # ─── Envia mensagem de entrega
     await context.bot.send_message(
         chat_id=chat_id,
         text=messages.delivery_text(
