@@ -1,5 +1,15 @@
 """
 Módulo ADMIN — SUB-ADMINS (v2 — completo).
+
+Funcionalidades:
+  • Lista com filtros (todos / ativos / expirados)
+  • Adicionar com apelido e tempo de expiração
+  • Editar permissões granulares (8 áreas)
+  • Tornar permanente / mudar expiração
+  • Ver histórico de ações do sub
+  • Logs globais
+  • Remover com confirmação
+  • Notifica o sub ao ganhar/perder cargo
 """
 import logging
 from datetime import datetime
@@ -14,14 +24,14 @@ from keyboards import menus
 logger = logging.getLogger(__name__)
 
 PERMS_LABEL = {
-    "users": "👥 Usuários",
-    "products": "📦 Produtos",
-    "purchases": "🛒 Vendas",
-    "gifts": "🎁 Gift Cards",
+    "users":       "👥 Usuários",
+    "products":    "📦 Produtos",
+    "purchases":   "🛒 Vendas",
+    "gifts":       "🎁 Gift Cards",
     "withdrawals": "💸 Saques",
-    "affiliates": "🤝 Afiliados",
-    "broadcast": "📢 Transmissão",
-    "config": "⚙️ Config",
+    "affiliates":  "🤝 Afiliados",
+    "broadcast":   "📢 Transmissão",
+    "config":      "⚙️ Config",
 }
 
 
@@ -130,7 +140,6 @@ async def admin_sub_v2_view_cb(update: Update, context: ContextTypes.DEFAULT_TYP
     nome_tg = (u or {}).get("first_name") or "—"
     username = (u or {}).get("username") or "—"
 
-    # Expiração
     exp = sub.get("expires_at")
     exp_line = "♾️ Permanente"
     exp_status = ""
@@ -147,7 +156,6 @@ async def admin_sub_v2_view_cb(update: Update, context: ContextTypes.DEFAULT_TYP
         except Exception:
             exp_line = str(exp)
 
-    # Permissões
     perms = sub.get("permissoes", "")
     if perms == "all":
         perms_txt = "✅ <b>TODAS as permissões</b>"
@@ -163,7 +171,6 @@ async def admin_sub_v2_view_cb(update: Update, context: ContextTypes.DEFAULT_TYP
             linhas[-1] = linhas[-1].replace("├", "└")
         perms_txt = "\n".join(linhas)
 
-    # Stats
     total_acoes = await db.sub_count_actions(user_id)
 
     texto = (
@@ -184,7 +191,7 @@ async def admin_sub_v2_view_cb(update: Update, context: ContextTypes.DEFAULT_TYP
 
 
 # ═══════════════════════════════════════════════
-# ADICIONAR
+# ADICIONAR (wizard)
 # ═══════════════════════════════════════════════
 async def admin_sub_v2_add_cb(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -320,7 +327,6 @@ async def admin_sub_v2_add_handler(update: Update, context: ContextTypes.DEFAULT
         user_id = state["user_id"]
         nome = state["nome"]
 
-        # Cria com "all" por padrão
         await db.admin_sub_add_full(
             user_id=user_id,
             nome=nome,
@@ -421,12 +427,13 @@ async def admin_sub_v2_tog_cb(update: Update, context: ContextTypes.DEFAULT_TYPE
         return
 
     perms = sub.get("permissoes", "") or ""
+    expires_original = sub.get("expires_at")
 
     # Toggle
     if perms == "all":
-        # Remove tudo e deixa só as outras permissões + essa
         todas = list(PERMS_LABEL.keys())
-        todas.remove(area)
+        if area in todas:
+            todas.remove(area)
         perms = ",".join(todas)
     else:
         atual = [p.strip() for p in perms.split(",") if p.strip()]
@@ -436,26 +443,29 @@ async def admin_sub_v2_tog_cb(update: Update, context: ContextTypes.DEFAULT_TYPE
             atual.append(area)
         perms = ",".join(atual) if atual else ""
 
+    # Calcula dias restantes pra preservar expiração
+    expires_days = None
+    if expires_original:
+        try:
+            exp_dt = datetime.strptime(str(expires_original)[:19], "%Y-%m-%d %H:%M:%S")
+            restantes = (exp_dt - datetime.now()).days
+            expires_days = max(restantes, 1)
+        except Exception:
+            expires_days = None
+
     await db.admin_sub_add_full(
         user_id=user_id,
         nome=sub.get("nome") or "",
         permissoes=perms,
-        expires_days=None,  # mantém o atual
+        expires_days=expires_days,
         created_by=update.effective_user.id,
     )
-    # Restaura expiração (foi sobrescrita)
-    if sub.get("expires_at"):
-        try:
-            exp_dt = datetime.strptime(str(sub["expires_at"])[:19], "%Y-%m-%d %H:%M:%S")
-            dias_rest = max((exp_dt - datetime.now()).days, 1)
-            await db.admin_sub_set_expira(user_id, dias_rest)
-        except Exception:
-            pass
 
     await db.sub_log_action(
         update.effective_user.id, "perms_change", str(user_id), perms,
     )
 
+    # Re-renderiza
     query.data = f"admin:sub2_perm:{user_id}"
     await admin_sub_v2_perm_cb(update, context)
 
@@ -466,13 +476,27 @@ async def admin_sub_v2_all_cb(update: Update, context: ContextTypes.DEFAULT_TYPE
     if not is_master(update.effective_user.id):
         return
 
-    user_id = int(query.data.split(":")[2])
+    try:
+        user_id = int(query.data.split(":")[2])
+    except (IndexError, ValueError):
+        return
+
     sub = await db.admin_sub_get_full(user_id)
     if not sub:
         return
 
+    # Preserva expiração
+    expires_days = None
+    if sub.get("expires_at"):
+        try:
+            exp_dt = datetime.strptime(str(sub["expires_at"])[:19], "%Y-%m-%d %H:%M:%S")
+            restantes = (exp_dt - datetime.now()).days
+            expires_days = max(restantes, 1)
+        except Exception:
+            expires_days = None
+
     await db.admin_sub_add_full(
-        user_id, sub.get("nome") or "", "all", None, update.effective_user.id,
+        user_id, sub.get("nome") or "", "all", expires_days, update.effective_user.id,
     )
     await db.sub_log_action(update.effective_user.id, "perms_all", str(user_id))
 
@@ -487,13 +511,26 @@ async def admin_sub_v2_none_cb(update: Update, context: ContextTypes.DEFAULT_TYP
     if not is_master(update.effective_user.id):
         return
 
-    user_id = int(query.data.split(":")[2])
+    try:
+        user_id = int(query.data.split(":")[2])
+    except (IndexError, ValueError):
+        return
+
     sub = await db.admin_sub_get_full(user_id)
     if not sub:
         return
 
+    expires_days = None
+    if sub.get("expires_at"):
+        try:
+            exp_dt = datetime.strptime(str(sub["expires_at"])[:19], "%Y-%m-%d %H:%M:%S")
+            restantes = (exp_dt - datetime.now()).days
+            expires_days = max(restantes, 1)
+        except Exception:
+            expires_days = None
+
     await db.admin_sub_add_full(
-        user_id, sub.get("nome") or "", "", None, update.effective_user.id,
+        user_id, sub.get("nome") or "", "", expires_days, update.effective_user.id,
     )
     await db.sub_log_action(update.effective_user.id, "perms_none", str(user_id))
 
@@ -511,7 +548,11 @@ async def admin_sub_v2_exp_cb(update: Update, context: ContextTypes.DEFAULT_TYPE
     if not is_master(update.effective_user.id):
         return
 
-    user_id = int(query.data.split(":")[2])
+    try:
+        user_id = int(query.data.split(":")[2])
+    except (IndexError, ValueError):
+        return
+
     sub = await db.admin_sub_get_full(user_id)
     if not sub:
         return
@@ -572,7 +613,11 @@ async def admin_sub_v2_perm_forever_cb(update: Update, context: ContextTypes.DEF
     if not is_master(update.effective_user.id):
         return
 
-    user_id = int(query.data.split(":")[2])
+    try:
+        user_id = int(query.data.split(":")[2])
+    except (IndexError, ValueError):
+        return
+
     await db.admin_sub_set_expira(user_id, None)
     await db.sub_log_action(update.effective_user.id, "exp_forever", str(user_id))
 
@@ -582,7 +627,7 @@ async def admin_sub_v2_perm_forever_cb(update: Update, context: ContextTypes.DEF
 
 
 # ═══════════════════════════════════════════════
-# HISTÓRICO DO SUB
+# HISTÓRICO
 # ═══════════════════════════════════════════════
 async def admin_sub_v2_hist_cb(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -590,7 +635,11 @@ async def admin_sub_v2_hist_cb(update: Update, context: ContextTypes.DEFAULT_TYP
     if not is_master(update.effective_user.id):
         return
 
-    user_id = int(query.data.split(":")[2])
+    try:
+        user_id = int(query.data.split(":")[2])
+    except (IndexError, ValueError):
+        return
+
     sub = await db.admin_sub_get_full(user_id)
     if not sub:
         return
@@ -677,7 +726,11 @@ async def admin_sub_v2_del_cb(update: Update, context: ContextTypes.DEFAULT_TYPE
     if not is_master(update.effective_user.id):
         return
 
-    user_id = int(query.data.split(":")[2])
+    try:
+        user_id = int(query.data.split(":")[2])
+    except (IndexError, ValueError):
+        return
+
     sub = await db.admin_sub_get_full(user_id)
     if not sub:
         return
@@ -707,7 +760,11 @@ async def admin_sub_v2_del_yes_cb(update: Update, context: ContextTypes.DEFAULT_
     if not is_master(update.effective_user.id):
         return
 
-    user_id = int(query.data.split(":")[2])
+    try:
+        user_id = int(query.data.split(":")[2])
+    except (IndexError, ValueError):
+        return
+
     await db.admin_sub_remove_full(user_id)
 
     await db.log_admin_action(
