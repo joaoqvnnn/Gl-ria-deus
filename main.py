@@ -673,7 +673,7 @@ async def _middleware(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not user:
         return
 
-    # Limpa banimentos e subs expirados (roda sempre, é rápido)
+    # Limpa banimentos e subs expirados
     try:
         await db.check_expired_bans()
     except Exception:
@@ -864,6 +864,13 @@ async def _text_router(update: Update, context):
     if ud.get("admin_btn2_search"):
         return await admin12.admin_btn_v2_search_handler(update, context)
 
+    # ── ADMIN 10: Broadcast v2
+    if ud.get("bc_aguardando_conteudo"):
+        return await admin10.admin_bc_v2_content_handler(update, context)
+
+    if ud.get("bc_sch_custom"):
+        return await admin10.admin_bc_v2_sch_custom_handler(update, context)
+
     # ── ADMIN 9: Gift cards v2
     if ud.get("gift_wizard"):
         return await admin9.admin_gift_wizard_handler(update, context)
@@ -891,6 +898,10 @@ async def _text_router(update: Update, context):
     if ud.get("admin_saque_search"):
         return await admin7.admin_saque_search_handler(update, context)
 
+    # ── ADMIN 5: Mensagem direta
+    if ud.get("admin_msg_user"):
+        return await admin5.admin_msg_user_handler(update, context)
+
     # ── ADMIN 4: Produtos v3
     if ud.get("admin_prod_edit"):
         return await admin4.admin_prod_edit_handler(update, context)
@@ -913,42 +924,12 @@ async def _text_router(update: Update, context):
     if ud.get("admin_prod_search"):
         return await admin4.admin_prod_search_handler(update, context)
 
-    # ── ADMIN 2: Vendas
+    # ── ADMIN 2: Vendas v2
     if ud.get("admin_venda_msg"):
         return await admin2.admin_venda_msg_handler(update, context)
 
     if ud.get("admin_purchase_search"):
         return await admin2.admin_purchase_search_handler(update, context)
-
-    if ud.get("admin_gift_tipo"):
-        return await admin2.admin_gift_valor_handler(update, context)
-
-    if ud.get("admin_gift_valor") is not None or ud.get("admin_gift_produto") is not None:
-        return await admin2.admin_gift_qtd_handler(update, context)
-
-    # ── ADMIN 10: Broadcast v2
-    if ud.get("bc_aguardando_conteudo"):
-        return await admin10.admin_bc_v2_content_handler(update, context)
-
-    if ud.get("bc_sch_custom"):
-        return await admin10.admin_bc_v2_sch_custom_handler(update, context)
-
-    # ── ADMIN 3: Textos/botões/config (legacy)
-    if ud.get("admin_cfg_edit"):
-        return await admin3.admin_cfg_edit_handler(update, context)
-
-    if ud.get("admin_text_edit"):
-        return await admin3.admin_text_edit_handler(update, context)
-
-    if ud.get("admin_btn_edit"):
-        return await admin3.admin_btn_edit_handler(update, context)
-
-    # ── ADMIN 1: Usuários legacy
-    if ud.get("admin_balance"):
-        return await admin1.admin_balance_handler(update, context)
-
-    if ud.get("admin_msg_user"):
-        return await admin5.admin_msg_user_handler(update, context)
 
     # ── Usuário (fluxos normais)
     if ud.get("awaiting_multi"):
@@ -989,9 +970,6 @@ async def _media_router(update: Update, context):
 
     if ud.get("admin_banner_new"):
         return await admin3.admin_banner_photo_handler(update, context)
-
-    if ud.get("admin_bc"):
-        return await admin5.admin_bc_media_handler(update, context)
 
     if ud.get("bc_aguardando_conteudo"):
         return await admin10.admin_bc_v2_content_handler(update, context)
@@ -1062,7 +1040,7 @@ def build_app():
     app.add_handler(InlineQueryHandler(inline.inline_query))
 
     # ═══════════════════════════════════════════
-    # ADMIN 1 — DASHBOARD + USERS LEGACY
+    # ADMIN 1 — DASHBOARD + LEGACY
     # ═══════════════════════════════════════════
     app.add_handler(CallbackQueryHandler(admin1.admin_home_cb,               pattern=r"^admin:home$"))
     app.add_handler(CallbackQueryHandler(admin1.admin_add_balance_prompt,    pattern=r"^admin:add_balance:\d+$"))
@@ -1086,11 +1064,8 @@ def build_app():
     app.add_handler(CallbackQueryHandler(admin2.admin_purchase_search_prompt, pattern=r"^admin:purchase_search$"))
 
     # ═══════════════════════════════════════════
-    # ADMIN 3 — CONFIG/TEXTOS/BOTÕES LEGACY
+    # ADMIN 3 — BANNER
     # ═══════════════════════════════════════════
-    app.add_handler(CallbackQueryHandler(admin3.admin_cfg_edit_prompt,       pattern=r"^admin:cfg:"))
-    app.add_handler(CallbackQueryHandler(admin3.admin_text_edit_prompt,      pattern=r"^admin:text_edit:"))
-    app.add_handler(CallbackQueryHandler(admin3.admin_btn_edit_prompt,       pattern=r"^admin:btn_edit:"))
     app.add_handler(CallbackQueryHandler(admin3.admin_banner_cb,             pattern=r"^admin:banner$"))
     app.add_handler(CallbackQueryHandler(admin3.admin_banner_new_cb,         pattern=r"^admin:banner_new$"))
     app.add_handler(CallbackQueryHandler(admin3.admin_banner_del_cb,         pattern=r"^admin:banner_del$"))
@@ -1123,14 +1098,15 @@ def build_app():
     app.add_handler(CallbackQueryHandler(admin4.admin_prod_hard_del_yes_cb,   pattern=r"^admin:prod_hard_del_yes:\d+$"))
 
     # ═══════════════════════════════════════════
-    # ADMIN 5 — BROADCAST LEGACY + MENSAGENS DIRETAS
+    # ADMIN 5 — MENSAGEM DIRETA
     # ═══════════════════════════════════════════
-    app.add_handler(CallbackQueryHandler(admin1.admin_bc_prompt,             pattern=r"^admin:bc_"))
     app.add_handler(CallbackQueryHandler(admin5.admin_msg_user_prompt,       pattern=r"^admin:msg_user:\d+$"))
 
     # ═══════════════════════════════════════════
-    # ADMIN 6 — SUB-ADMINS LEGACY (desativado — usar v2)
+    # ADMIN 6 — EXPORTAR
     # ═══════════════════════════════════════════
+    app.add_handler(CallbackQueryHandler(admin6.admin_export_cb,             pattern=r"^admin:export$"))
+    app.add_handler(CallbackQueryHandler(admin6.admin_export_run_cb,         pattern=r"^admin:export:"))
 
     # ═══════════════════════════════════════════
     # ADMIN 7 — SAQUES v2
@@ -1199,6 +1175,7 @@ def build_app():
     app.add_handler(CallbackQueryHandler(admin10.admin_bc_v2_sch_choice_cb,  pattern=r"^admin:bc_sch:"))
     app.add_handler(CallbackQueryHandler(admin10.admin_bc_v2_save_draft_cb,  pattern=r"^admin:bc_save_draft$"))
     app.add_handler(CallbackQueryHandler(admin10.admin_bc_v2_cancel_cb,      pattern=r"^admin:bc_cancel$"))
+    app.add_handler(CallbackQueryHandler(admin10.admin_bc_v2_preview_back_cb, pattern=r"^admin:bc_preview_back$"))
     app.add_handler(CallbackQueryHandler(admin10.admin_bc_v2_agendadas_cb,   pattern=r"^admin:bc_agendadas$"))
     app.add_handler(CallbackQueryHandler(admin10.admin_bc_v2_rascunhos_cb,   pattern=r"^admin:bc_rascunhos$"))
     app.add_handler(CallbackQueryHandler(admin10.admin_bc_v2_historico_cb,   pattern=r"^admin:bc_historico$"))
@@ -1206,6 +1183,7 @@ def build_app():
     app.add_handler(CallbackQueryHandler(admin10.admin_bc_v2_force_send_cb,  pattern=r"^admin:bc_force_send:"))
     app.add_handler(CallbackQueryHandler(admin10.admin_bc_v2_cancel_sched_cb, pattern=r"^admin:bc_cancel_sched:"))
     app.add_handler(CallbackQueryHandler(admin10.admin_bc_v2_del_cb,         pattern=r"^admin:bc_del:"))
+    app.add_handler(CallbackQueryHandler(admin10.admin_bc_v2_sched_draft_cb, pattern=r"^admin:bc_sched_draft:"))
 
     # ═══════════════════════════════════════════
     # ADMIN 11 — ESTATÍSTICAS v2
@@ -1367,7 +1345,10 @@ def build_app():
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, _text_router))
 
     # ─── MÍDIA
-    app.add_handler(MessageHandler(filters.PHOTO | filters.VIDEO | filters.Document.ALL, _media_router))
+    app.add_handler(MessageHandler(
+        filters.PHOTO | filters.VIDEO | filters.Document.ALL,
+        _media_router,
+    ))
 
     return app
 
