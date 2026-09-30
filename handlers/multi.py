@@ -8,8 +8,15 @@ from texts import messages
 from handlers.buy import _process_purchase
 
 
-# ─── Callback: 🛒 Comprar mais de um → ENVIA NOVA MENSAGEM com ForceReply
+# ═══════════════════════════════════════════════
+# 🛒 COMPRAR MAIS DE UM — iniciar
+# ═══════════════════════════════════════════════
 async def multi_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """
+    Ao clicar em "🛒 Comprar mais de um" na tela do produto:
+      - ENVIA NOVA MENSAGEM (não edita a anterior)
+      - Usa ForceReply para puxar a resposta do usuário
+    """
     query = update.callback_query
     await query.answer()
     user = update.effective_user
@@ -33,8 +40,16 @@ async def multi_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 
-# ─── Handler de texto (aguardando quantidade)
+# ═══════════════════════════════════════════════
+# 🛒 COMPRAR MAIS DE UM — handler de texto (quantidade)
+# ═══════════════════════════════════════════════
 async def multi_qty_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """
+    Recebe a quantidade digitada (via ForceReply).
+    - Se /cancelar → ENVIA NOVA MSG de cancelamento
+    - Se inválido → pede novamente
+    - Se válido → ENVIA NOVA MSG com o resultado do pedido
+    """
     awaiting = context.user_data.get("awaiting_multi")
     if not awaiting:
         return
@@ -42,7 +57,7 @@ async def multi_qty_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = (update.message.text or "").strip()
     user = update.effective_user
 
-    # /cancelar
+    # ─── /cancelar
     if text.startswith("/cancelar"):
         context.user_data.pop("awaiting_multi", None)
         await update.message.reply_text(
@@ -51,14 +66,15 @@ async def multi_qty_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
 
-    # Parse int
+    # ─── Parse int
     try:
         qty = int(text)
         if qty < 1:
             raise ValueError
     except ValueError:
         await update.message.reply_text(
-            "❌ Digite um número válido maior que 0.", parse_mode=ParseMode.HTML
+            "❌ Digite um número válido maior que 0.",
+            parse_mode=ParseMode.HTML,
         )
         return
 
@@ -66,7 +82,7 @@ async def multi_qty_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     product = await db.get_product(pid)
     u = await db.get_user(user.id)
 
-    if not product:
+    if not product or not u:
         context.user_data.pop("awaiting_multi", None)
         return
 
@@ -79,7 +95,7 @@ async def multi_qty_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     context.user_data.pop("awaiting_multi", None)
 
-    # ENVIA NOVA MENSAGEM com o resultado do pedido
+    # ─── ENVIA NOVA MENSAGEM com o resultado do pedido
     await update.message.reply_text(
         messages.multi_result_text(u, product, qty),
         reply_markup=menus.multi_confirm_keyboard(pid, qty),
@@ -87,13 +103,21 @@ async def multi_qty_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 
-# ─── Confirmar Compra (múltipla)
+# ═══════════════════════════════════════════════
+# 🛒 COMPRAR MAIS DE UM — confirmar compra
+# ═══════════════════════════════════════════════
 async def multi_confirm(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """
+    Ao clicar em "✅ Confirmar Compra":
+      - Verifica saldo
+      - Se suficiente → processa compra (edita msg + entrega)
+      - Se insuficiente → ENVIA NOVA MSG com aviso + botão PIX
+    """
     query = update.callback_query
     await query.answer()
     user = update.effective_user
 
-    # multi:confirm:{pid}:{qty}
+    # callback_data: multi:confirm:{pid}:{qty}
     try:
         _, _, pid_str, qty_str = query.data.split(":")
         pid = int(pid_str)
@@ -109,19 +133,22 @@ async def multi_confirm(update: Update, context: ContextTypes.DEFAULT_TYPE):
     total = float(product["price"]) * qty
     balance = float(u["balance"])
 
-    # Saldo suficiente
+    # ─── Saldo suficiente → processa
     if balance >= total:
-        # Edita a mensagem de resultado → "Processando" e vai pra entrega
         try:
             await query.edit_message_text(
-                "⏳ <b>Processando compra...</b>", parse_mode=ParseMode.HTML
+                "⏳ <b>Processando compra...</b>",
+                parse_mode=ParseMode.HTML,
             )
         except Exception:
             pass
-        await _process_purchase(context, query.message.chat_id, u, product, quantity=qty)
+
+        await _process_purchase(
+            context, query.message.chat_id, u, product, quantity=qty
+        )
         return
 
-    # Saldo insuficiente → ENVIA NOVA MENSAGEM com aviso + PIX
+    # ─── Saldo insuficiente → ENVIA NOVA MENSAGEM com aviso + botão PIX
     kb = menus.insufficient_keyboard(pid, qty, total)
     await context.bot.send_message(
         chat_id=query.message.chat_id,
@@ -131,11 +158,27 @@ async def multi_confirm(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 
+# ═══════════════════════════════════════════════
+# 🛒 COMPRAR MAIS DE UM — cancelar
+# ═══════════════════════════════════════════════
 async def multi_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """
+    Ao clicar em "❌ Cancelar":
+      - Limpa o carrinho abandonado
+      - ENVIA NOVA MENSAGEM de cancelamento
+    """
     query = update.callback_query
     await query.answer()
+    user = update.effective_user
+
     context.user_data.pop("awaiting_multi", None)
-    # ENVIA NOVA MENSAGEM (conforme fluxo)
+
+    # ─── Limpa carrinho abandonado
+    try:
+        await db.clear_cart_view(user.id, None)
+    except Exception:
+        pass
+
     await context.bot.send_message(
         chat_id=query.message.chat_id,
         text=messages.multi_cancelled_text(),
