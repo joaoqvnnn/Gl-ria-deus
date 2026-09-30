@@ -1,5 +1,5 @@
 import re
-from telegram import Update
+from telegram import Update, ForceReply
 from telegram.constants import ParseMode
 from telegram.ext import ContextTypes
 
@@ -26,7 +26,7 @@ async def alter_open(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 # ═══════════════════════════════════════════════
-# ✏️ PEDIR WHATSAPP (sem ForceReply)
+# ✏️ PEDIR WHATSAPP — ForceReply direto no edit
 # ═══════════════════════════════════════════════
 async def alter_whatsapp(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -37,7 +37,7 @@ async def alter_whatsapp(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         await query.edit_message_text(
             messages.whatsapp_prompt_text(),
-            reply_markup=menus.alter_data_cancel_keyboard(),
+            reply_markup=ForceReply(selective=True),
             parse_mode=ParseMode.HTML,
         )
     except Exception:
