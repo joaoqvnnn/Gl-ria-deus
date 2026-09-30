@@ -1,5 +1,5 @@
 import asyncio
-from telegram import Update, InputMediaPhoto
+from telegram import Update, InputMediaPhoto, ForceReply
 from telegram.constants import ParseMode
 from telegram.ext import ContextTypes
 
@@ -26,7 +26,7 @@ async def topup_open(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 # ═══════════════════════════════════════════════
-# 💠 PIX RÁPIDO — prompt do valor (sem ForceReply)
+# 💠 PIX RÁPIDO — edita a msg com ForceReply direto
 # ═══════════════════════════════════════════════
 async def topup_pix_open(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -37,7 +37,7 @@ async def topup_pix_open(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         await query.edit_message_text(
             messages.topup_value_prompt_text(),
-            reply_markup=menus.back_to_menu_keyboard(),
+            reply_markup=ForceReply(selective=True),
             parse_mode=ParseMode.HTML,
         )
     except Exception:
