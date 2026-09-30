@@ -25,7 +25,7 @@ async def menu_router(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if data == "menu:home":
         await query.edit_message_text(
             messages.welcome_text(u),
-            reply_markup=menus.main_menu_keyboard(),
+            reply_markup=menus.main_menu_keyboard(user_id=user.id),
             parse_mode=ParseMode.HTML,
         )
 
@@ -62,15 +62,14 @@ async def menu_router(update: Update, context: ContextTypes.DEFAULT_TYPE):
         from handlers import search as search_handler
         await search_handler.search_open(update, context)
 
-    # ─── Abrir Loja (Web App dentro do Telegram)
+    # ─── Abrir Loja (fallback — caso o botão antigo seja clicado)
     elif data == "menu:store":
         url = f"{MINIAPP_BASE_URL}/loja/{user.id}"
         kb = InlineKeyboardMarkup([[
             InlineKeyboardButton("🛒 Abrir Loja", web_app=WebAppInfo(url=url))
         ]])
         await query.edit_message_text(
-            "🛒 <b>Clique abaixo para abrir a loja:</b>\n\n"
-            "Você será redirecionado para uma experiência completa dentro do Telegram.",
+            "🛒 <b>Clique abaixo para abrir a loja:</b>",
             reply_markup=kb,
             parse_mode=ParseMode.HTML,
         )
