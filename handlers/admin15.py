@@ -1,5 +1,5 @@
 """
-Módulo ADMIN — EXTRAS (backup, logs, manutenção, sistema).
+Módulo ADMIN — EXTRAS (backup, logs, manutenção, sistema, restart).
 """
 import io
 import os
@@ -19,7 +19,6 @@ from texts import cache
 
 logger = logging.getLogger(__name__)
 
-# Momento do boot (uptime)
 BOOT_TIME = datetime.now()
 
 MAINT_DEFAULT_MSG = (
@@ -37,7 +36,10 @@ async def _edit_or_send(query, text: str, kb=None):
     try:
         await query.edit_message_text(text, reply_markup=kb, parse_mode=ParseMode.HTML)
     except Exception:
-        await query.message.reply_text(text, reply_markup=kb, parse_mode=ParseMode.HTML)
+        try:
+            await query.message.reply_text(text, reply_markup=kb, parse_mode=ParseMode.HTML)
+        except Exception:
+            pass
 
 
 async def _delete_prompt(context, id_key, chat_key):
@@ -279,7 +281,6 @@ async def admin_extras_backup_restore_handler(update: Update, context: ContextTy
         file = await context.bot.get_file(doc.file_id)
         data = await file.download_as_bytearray()
 
-        # Salva como backup atual antes de sobrescrever
         try:
             await db._db.close()
         except Exception:
@@ -437,7 +438,6 @@ async def admin_logs2_search_handler(update: Update, context: ContextTypes.DEFAU
     filtro["action"] = term
     context.user_data["logs_v2_filtro"] = filtro
 
-    # Re-renderiza via mensagem nova
     class FakeQuery:
         def __init__(self, message):
             self.message = message
@@ -809,7 +809,6 @@ async def admin_extras_restart_hard_yes_cb(update: Update, context: ContextTypes
 
     logger.warning("🛑 RESTART HARD solicitado por %s", update.effective_user.id)
 
-    # Mata o processo — o Render reinicia
     os._exit(0)
 
 
@@ -844,10 +843,8 @@ async def admin_extras_clear_yes_cb(update: Update, context: ContextTypes.DEFAUL
     if not is_admin(update.effective_user.id):
         return
 
-    # Limpa o próprio user_data do admin (menos o essencial)
     try:
         from handlers import _state
-        # Limpa todos os user_data de todos os usuários via application
         app = context.application
         if hasattr(app, "user_data") and app.user_data:
             for uid in list(app.user_data.keys()):
@@ -870,7 +867,6 @@ async def admin_extras_clear_yes_cb(update: Update, context: ContextTypes.DEFAUL
 # JOBS AUTOMÁTICOS
 # ═══════════════════════════════════════════════
 async def job_backup_auto(context: ContextTypes.DEFAULT_TYPE):
-    """Roda pra fazer backup automático."""
     try:
         ligado = (await db.get_config("backup_auto", "0")) == "1"
         if not ligado:
@@ -891,7 +887,6 @@ async def job_backup_auto(context: ContextTypes.DEFAULT_TYPE):
                 )
             except Exception as e:
                 logger.warning("Falha env backup pro canal: %s", e)
-                # Tenta mandar pro primeiro admin
                 if ADMIN_IDS:
                     try:
                         await context.bot.send_document(
@@ -919,12 +914,10 @@ async def job_backup_auto(context: ContextTypes.DEFAULT_TYPE):
 
 
 async def job_maintenance_check(context: ContextTypes.DEFAULT_TYPE):
-    """Roda a cada 60s checando manutenção agendada."""
     try:
         ativou = await db.maintenance_check_agendada()
         if ativou:
             logger.info("Manutenção agendada ATIVADA")
-            # Avisa admin master
             if ADMIN_IDS:
                 try:
                     await context.bot.send_message(
