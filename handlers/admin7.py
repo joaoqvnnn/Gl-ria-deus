@@ -1,7 +1,9 @@
 """
-Módulo ADMIN — SAQUES (v2 — completo, com motivo, PDF, filtros).
+Módulo ADMIN — SAQUES v2 (completo).
 """
+import io
 import logging
+from datetime import datetime
 from telegram import Update, ForceReply, InputFile
 from telegram.constants import ParseMode
 from telegram.ext import ContextTypes
@@ -24,7 +26,34 @@ async def _edit_or_send(query, text: str, kb=None):
     try:
         await query.edit_message_text(text, reply_markup=kb, parse_mode=ParseMode.HTML)
     except Exception:
-        await query.message.reply_text(text, reply_markup=kb, parse_mode=ParseMode.HTML)
+        try:
+            await query.message.reply_text(text, reply_markup=kb, parse_mode=ParseMode.HTML)
+        except Exception:
+            pass
+
+
+async def _delete_prompt(context):
+    pid = context.user_data.pop("_saque_reject_prompt_id", None)
+    chat = context.user_data.pop("_saque_reject_prompt_chat", None)
+    if pid and chat:
+        try:
+            await context.bot.delete_message(chat_id=chat, message_id=pid)
+        except Exception:
+            pass
+
+
+async def _edit_prompt_error(context, text: str):
+    pid = context.user_data.get("_saque_reject_prompt_id")
+    chat = context.user_data.get("_saque_reject_prompt_chat")
+    if pid and chat:
+        try:
+            await context.bot.edit_message_text(
+                chat_id=chat, message_id=pid,
+                text=text, reply_markup=ForceReply(selective=True),
+                parse_mode=ParseMode.HTML,
+            )
+        except Exception:
+            pass
 
 
 # ═══════════════════════════════════════════════
@@ -208,7 +237,6 @@ async def admin_saque_ok_confirm_cb(update: Update, context: ContextTypes.DEFAUL
         f"R$ {float(w['amount']):.2f}",
     )
 
-    # Notifica o cliente
     try:
         await context.bot.send_message(
             chat_id=w["user_id"],
@@ -234,7 +262,7 @@ async def admin_saque_ok_confirm_cb(update: Update, context: ContextTypes.DEFAUL
 
 
 # ═══════════════════════════════════════════════
-# REJEITAR (com motivo obrigatório)
+# REJEITAR (com motivo)
 # ═══════════════════════════════════════════════
 async def admin_saque_no_prompt_cb(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -277,7 +305,6 @@ async def admin_saque_no_handler(update: Update, context: ContextTypes.DEFAULT_T
 
     motivo = (update.message.text or "").strip()
 
-    # Apaga a msg do admin (privacidade do fluxo)
     try:
         await update.message.delete()
     except Exception:
@@ -285,17 +312,16 @@ async def admin_saque_no_handler(update: Update, context: ContextTypes.DEFAULT_T
 
     if motivo.startswith("/"):
         context.user_data.pop("admin_saque_reject_wid", None)
+        await _delete_prompt(context)
         return
 
     if not motivo:
-        # Erro → edita o prompt pedindo de novo
         await _edit_prompt_error(
             context,
             "❌ Motivo vazio.\n\nEnvie o motivo da rejeição:",
         )
         return
 
-    # Salva motivo + rejeita
     await db.admin_wd_set_reject_reason(wid, motivo)
     w = await db.admin_reject_withdrawal(wid)
     context.user_data.pop("admin_saque_reject_wid", None)
@@ -308,7 +334,6 @@ async def admin_saque_no_handler(update: Update, context: ContextTypes.DEFAULT_T
         update.effective_user.id, "withdrawal_reject", wid, motivo[:80],
     )
 
-    # Notifica o cliente
     try:
         await context.bot.send_message(
             chat_id=w["user_id"],
@@ -362,14 +387,12 @@ async def admin_saque_pdf_cb(update: Update, context: ContextTypes.DEFAULT_TYPE)
         pdf_bytes = pdf_gen.gerar_comprovante_saque(w, u, STORE_NAME)
         filename = f"comprovante-{wid[:8]}.pdf"
 
-        # Envia pro admin
         await context.bot.send_document(
             chat_id=query.message.chat_id,
             document=InputFile(io.BytesIO(pdf_bytes), filename=filename),
             caption="📄 Comprovante gerado. Enviado pro cliente também.",
         )
 
-        # Envia pro cliente
         try:
             await context.bot.send_document(
                 chat_id=w["user_id"],
@@ -530,34 +553,3 @@ async def admin_saque_search_handler(update: Update, context: ContextTypes.DEFAU
     texto = f"🔍 <b>Saques do user {user_id}</b> ({len(wds)}):"
     kb = menus.admin_saques_kb(wds, 0, 1, "todos")
     await update.message.reply_text(texto, reply_markup=kb, parse_mode=ParseMode.HTML)
-
-
-# ═══════════════════════════════════════════════
-# HELPERS
-# ═══════════════════════════════════════════════
-async def _delete_prompt(context):
-    pid = context.user_data.pop("_saque_reject_prompt_id", None)
-    chat = context.user_data.pop("_saque_reject_prompt_chat", None)
-    if pid and chat:
-        try:
-            await context.bot.delete_message(chat_id=chat, message_id=pid)
-        except Exception:
-            pass
-
-
-async def _edit_prompt_error(context, text: str):
-    pid = context.user_data.get("_saque_reject_prompt_id")
-    chat = context.user_data.get("_saque_reject_prompt_chat")
-    if pid and chat:
-        try:
-            await context.bot.edit_message_text(
-                chat_id=chat, message_id=pid,
-                text=text, reply_markup=ForceReply(selective=True),
-                parse_mode=ParseMode.HTML,
-            )
-        except Exception:
-            pass
-
-
-# import necessário no topo
-import io
