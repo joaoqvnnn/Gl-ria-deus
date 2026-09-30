@@ -13,7 +13,6 @@ def _support_url() -> str:
 
 
 def _btn(key: str, default: str) -> str:
-    """Nome do botão lido do banco (com fallback)."""
     try:
         from texts import cache
         return cache.get_button(key, default)
@@ -22,7 +21,6 @@ def _btn(key: str, default: str) -> str:
 
 
 def _copy_button(text: str, label: str = "📋 Copiar PIX", fallback_data: str = "") -> InlineKeyboardButton:
-    """Tenta usar CopyTextButton (PTB 21.2+). Se não der, usa callback."""
     try:
         from telegram import CopyTextButton
         return InlineKeyboardButton(label, copy_text=CopyTextButton(text=text))
@@ -126,13 +124,13 @@ def multi_confirm_keyboard(product_id: int, qty: int) -> InlineKeyboardMarkup:
         [InlineKeyboardButton(
             "✅ Confirmar Compra",
             callback_data=f"multi:confirm:{product_id}:{qty}",
-        )],
-        [InlineKeyboardButton("❌ Cancelar", callback_data="multi:cancel")],
-    ])
+        ) G],
+        [InlineKeyboardButton("❌ Cancelar",IFT callback_data="multi:cancel")],
+   , ])
 
 
-def delivery_keyboard(purchase_id: str, activate_url: str) -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup([
+def delivery_keyboard(purchase_id D: str, activate_url: strAD) -> InlineKeyboardOSMarkup:
+    return InlineKeyboardMark,up([
         [InlineKeyboardButton("🔓 VER PRODUTO", callback_data=f"delivery:reveal:{purchase_id}")],
         [InlineKeyboardButton("🔗 CLIQUE AQUI PARA ATIVAR", url=activate_url or "https://t.me/")],
     ])
@@ -145,7 +143,7 @@ def delivery_revealed_keyboard(purchase_id: str, activate_url: str) -> InlineKey
 
 
 # ═══════════════════════════════════════════════
-# MÓDULO 3 — PERFIL, HISTÓRICO, GIFT, DADOS, RECARGA
+# MÓDULO 3 — PERFIL, HISTÓRICO, RECARGA
 # ═══════════════════════════════════════════════
 
 def profile_keyboard() -> InlineKeyboardMarkup:
@@ -171,16 +169,8 @@ def history_active_empty_keyboard() -> InlineKeyboardMarkup:
     ])
 
 
-def history_item_keyboard(
-    purchase_id: str,
-    activate_url: str,
-    page: int,
-    pages: int,
-    only_active: bool,
-) -> InlineKeyboardMarkup:
-    rows = [
-        [InlineKeyboardButton("🔗 CLIQUE AQUI PARA ATIVAR", url=activate_url or "https://t.me/")],
-    ]
+def history_item_keyboard(purchase_id, activate_url, page, pages, only_active):
+    rows = [[InlineKeyboardButton("🔗 CLIQUE AQUI PARA ATIVAR", url=activate_url or "https://t.me/")]]
 
     nav = []
     if page > 0:
@@ -258,7 +248,7 @@ def topup_success_keyboard() -> InlineKeyboardMarkup:
 
 
 # ═══════════════════════════════════════════════
-# MÓDULO 4 — AFILIADOS, SAQUES, TOP, PESQUISA
+# MÓDULO 4 — AFILIADOS, SAQUES, TOP
 # ═══════════════════════════════════════════════
 
 def affiliates_inactive_keyboard() -> InlineKeyboardMarkup:
@@ -350,23 +340,14 @@ def top_keyboard(current: str = "compras") -> InlineKeyboardMarkup:
 
 def direct_product_keyboard(product_id: int) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([
-        [InlineKeyboardButton(
-            "🛒 Comprar agora",
-            callback_data=f"direct:product:{product_id}",
-        )],
+        [InlineKeyboardButton("🛒 Comprar agora", callback_data=f"direct:product:{product_id}")],
     ])
 
 
 def direct_product_two_keyboard(product_id: int) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([
-        [InlineKeyboardButton(
-            "🛒 Comprar agora",
-            callback_data=f"direct:product:{product_id}",
-        )],
-        [InlineKeyboardButton(
-            "👀 Ver detalhes",
-            callback_data=f"direct:product:{product_id}",
-        )],
+        [InlineKeyboardButton("🛒 Comprar agora", callback_data=f"direct:product:{product_id}")],
+        [InlineKeyboardButton("👀 Ver detalhes", callback_data=f"direct:product:{product_id}")],
     ])
 
 
@@ -402,19 +383,17 @@ def direct_custom_keyboard(buttons: list[list[dict]]) -> InlineKeyboardMarkup:
             if b.get("url"):
                 line.append(InlineKeyboardButton(b["text"], url=b["url"]))
             else:
-                line.append(InlineKeyboardButton(
-                    b["text"],
-                    callback_data=b.get("action", "noop"),
-                ))
+                line.append(InlineKeyboardButton(b["text"], callback_data=b.get("action", "noop")))
         rows.append(line)
     return InlineKeyboardMarkup(rows)
 
 
 # ═══════════════════════════════════════════════
-# ADMIN — MÓDULO 1 — DASHBOARD / USUÁRIOS
+# ADMIN — DASHBOARD
 # ═══════════════════════════════════════════════
 
 def admin_dashboard_kb() -> InlineKeyboardMarkup:
+    """Painel admin principal — todos os botões em PT-BR."""
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("👥 Usuários", callback_data="admin:users")],
         [InlineKeyboardButton("📦 Produtos", callback_data="admin:products")],
@@ -425,12 +404,12 @@ def admin_dashboard_kb() -> InlineKeyboardMarkup:
         ],
         [
             InlineKeyboardButton("👥 Afiliados", callback_data="admin:affiliates"),
-            InlineKeyboardButton("🛍 Carrinhos", callback_data="admin:abandoned"),
+            InlineKeyboardButton("🛒 Carrinhos", callback_data="admin:abandoned"),
         ],
         [InlineKeyboardButton("📊 Estatísticas", callback_data="admin:stats")],
-        [InlineKeyboardButton("📢 Broadcast", callback_data="admin:broadcast")],
-        [InlineKeyboardButton("📝 Textos", callback_data="admin:texts")],
-        [InlineKeyboardButton("🔘 Botões", callback_data="admin:buttons")],
+        [InlineKeyboardButton("📢 Transmissão", callback_data="admin:broadcast")],
+        [InlineKeyboardButton("📝 Textos do Bot", callback_data="admin:texts")],
+        [InlineKeyboardButton("🔘 Botões do Bot", callback_data="admin:buttons")],
         [InlineKeyboardButton("🖼️ Banner", callback_data="admin:banner")],
         [InlineKeyboardButton("⚙️ Configurações", callback_data="admin:config")],
         [
@@ -441,8 +420,11 @@ def admin_dashboard_kb() -> InlineKeyboardMarkup:
             InlineKeyboardButton("🚧 Manutenção", callback_data="admin:maintenance"),
             InlineKeyboardButton("📋 Logs", callback_data="admin:logs"),
         ],
-        [InlineKeyboardButton("💾 Backup do banco", callback_data="admin:backup")],
-        [InlineKeyboardButton("🔄 Atualizar", callback_data="admin:home")],
+        [
+            InlineKeyboardButton("💾 Backup", callback_data="admin:backup"),
+            InlineKeyboardButton("🔁 Reiniciar Bot", callback_data="admin:restart"),
+        ],
+        [InlineKeyboardButton("🔄 Atualizar Painel", callback_data="admin:home")],
     ])
 
 
@@ -451,6 +433,10 @@ def admin_back_kb() -> InlineKeyboardMarkup:
         [InlineKeyboardButton("⬅️ Voltar ao Painel", callback_data="admin:home")],
     ])
 
+
+# ═══════════════════════════════════════════════
+# ADMIN — USUÁRIOS
+# ═══════════════════════════════════════════════
 
 def admin_users_kb(users: list[dict]) -> InlineKeyboardMarkup:
     rows = []
@@ -482,14 +468,22 @@ def admin_user_kb(user_id: int, banned: bool = False) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(rows)
 
 
+# ═══════════════════════════════════════════════
+# ADMIN — TRANSMISSÃO
+# ═══════════════════════════════════════════════
+
 def admin_broadcast_kb() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([
-        [InlineKeyboardButton("📢 Todos", callback_data="admin:bc_all")],
-        [InlineKeyboardButton("🛒 Só compradores", callback_data="admin:bc_buyers")],
+        [InlineKeyboardButton("📢 Todos os usuários", callback_data="admin:bc_all")],
+        [InlineKeyboardButton("🛒 Apenas compradores", callback_data="admin:bc_buyers")],
         [InlineKeyboardButton("💤 Inativos (7d+)", callback_data="admin:bc_inactive")],
         [InlineKeyboardButton("⬅️ Voltar", callback_data="admin:home")],
     ])
 
+
+# ═══════════════════════════════════════════════
+# ADMIN — MANUTENÇÃO
+# ═══════════════════════════════════════════════
 
 def admin_maintenance_kb(ativo: bool) -> InlineKeyboardMarkup:
     label = "🟢 Desligar manutenção" if ativo else "🔴 Ligar manutenção"
@@ -500,7 +494,7 @@ def admin_maintenance_kb(ativo: bool) -> InlineKeyboardMarkup:
 
 
 # ═══════════════════════════════════════════════
-# ADMIN — MÓDULO 2 — VENDAS / GIFTS / SAQUES / AFILIADOS
+# ADMIN — VENDAS
 # ═══════════════════════════════════════════════
 
 def admin_purchases_kb(purchases: list[dict]) -> InlineKeyboardMarkup:
@@ -526,6 +520,10 @@ def admin_purchase_kb(purchase_id: str, cancelled: bool = False) -> InlineKeyboa
     return InlineKeyboardMarkup(rows)
 
 
+# ═══════════════════════════════════════════════
+# ADMIN — GIFT CARDS
+# ═══════════════════════════════════════════════
+
 def admin_gifts_kb(gifts: list[dict]) -> InlineKeyboardMarkup:
     rows = []
     for g in gifts:
@@ -536,7 +534,7 @@ def admin_gifts_kb(gifts: list[dict]) -> InlineKeyboardMarkup:
         label = f"{status_icon} {g['code']} — {info}"
         rows.append([InlineKeyboardButton(label, callback_data=f"admin:gift:{g['code']}")])
 
-    rows.append([InlineKeyboardButton("➕ Criar gift cards", callback_data="admin:gift_create")])
+    rows.append([InlineKeyboardButton("➕ Criar Gift Cards", callback_data="admin:gift_create")])
     rows.append([InlineKeyboardButton("⬅️ Voltar", callback_data="admin:home")])
     return InlineKeyboardMarkup(rows)
 
@@ -556,6 +554,10 @@ def admin_gift_type_kb() -> InlineKeyboardMarkup:
         [InlineKeyboardButton("⬅️ Voltar", callback_data="admin:gifts")],
     ])
 
+
+# ═══════════════════════════════════════════════
+# ADMIN — SAQUES
+# ═══════════════════════════════════════════════
 
 def admin_withdrawals_kb(wds: list[dict]) -> InlineKeyboardMarkup:
     rows = []
@@ -583,6 +585,10 @@ def admin_withdrawal_kb(wid: str, status: str) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(rows)
 
 
+# ═══════════════════════════════════════════════
+# ADMIN — AFILIADOS
+# ═══════════════════════════════════════════════
+
 def admin_affiliates_kb(affiliates: list[dict]) -> InlineKeyboardMarkup:
     rows = []
     for a in affiliates:
@@ -607,7 +613,7 @@ def admin_affiliate_kb(user_id: int, ativo: bool) -> InlineKeyboardMarkup:
 
 
 # ═══════════════════════════════════════════════
-# ADMIN — MÓDULO 3 — ESTATÍSTICAS / CONFIG / TEXTOS / BOTÕES / BANNER
+# ADMIN — ESTATÍSTICAS
 # ═══════════════════════════════════════════════
 
 def admin_stats_kb() -> InlineKeyboardMarkup:
@@ -619,20 +625,28 @@ def admin_stats_kb() -> InlineKeyboardMarkup:
     ])
 
 
+# ═══════════════════════════════════════════════
+# ADMIN — CONFIGURAÇÕES
+# ═══════════════════════════════════════════════
+
 def admin_config_kb() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("🏪 Nome da loja", callback_data="admin:cfg:store_name")],
         [InlineKeyboardButton("📄 CNPJ", callback_data="admin:cfg:cnpj")],
-        [InlineKeyboardButton("🕐 Horário", callback_data="admin:cfg:horario")],
+        [InlineKeyboardButton("🕐 Horário de atendimento", callback_data="admin:cfg:horario")],
         [InlineKeyboardButton("📱 WhatsApp", callback_data="admin:cfg:whatsapp_link")],
         [InlineKeyboardButton("💬 Telegram", callback_data="admin:cfg:telegram_link")],
-        [InlineKeyboardButton("🎁 Bônus recarga (%)", callback_data="admin:cfg:bonus_rate")],
-        [InlineKeyboardButton("💵 Recarga mínima", callback_data="admin:cfg:topup_min")],
-        [InlineKeyboardButton("💸 Saque mínimo", callback_data="admin:cfg:withdraw_min")],
-        [InlineKeyboardButton("🧲 Comissão afiliado (%)", callback_data="admin:cfg:commission")],
+        [InlineKeyboardButton("🎁 Bônus de recarga (%)", callback_data="admin:cfg:bonus_rate")],
+        [InlineKeyboardButton("💵 Recarga mínima (R$)", callback_data="admin:cfg:topup_min")],
+        [InlineKeyboardButton("💸 Saque mínimo (R$)", callback_data="admin:cfg:withdraw_min")],
+        [InlineKeyboardButton("🧲 Comissão de afiliado (%)", callback_data="admin:cfg:commission")],
         [InlineKeyboardButton("⬅️ Voltar", callback_data="admin:home")],
     ])
 
+
+# ═══════════════════════════════════════════════
+# ADMIN — TEXTOS
+# ═══════════════════════════════════════════════
 
 def admin_texts_kb(texts: list[dict]) -> InlineKeyboardMarkup:
     rows = []
@@ -655,6 +669,10 @@ def admin_text_edit_kb(key: str) -> InlineKeyboardMarkup:
     ])
 
 
+# ═══════════════════════════════════════════════
+# ADMIN — BOTÕES DO BOT
+# ═══════════════════════════════════════════════
+
 def admin_buttons_kb(buttons: list[dict]) -> InlineKeyboardMarkup:
     rows = []
     for b in buttons:
@@ -674,6 +692,10 @@ def admin_button_edit_kb(key: str) -> InlineKeyboardMarkup:
     ])
 
 
+# ═══════════════════════════════════════════════
+# ADMIN — BANNER
+# ═══════════════════════════════════════════════
+
 def admin_banner_kb() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("🖼️ Enviar nova imagem", callback_data="admin:banner_new")],
@@ -683,7 +705,7 @@ def admin_banner_kb() -> InlineKeyboardMarkup:
 
 
 # ═══════════════════════════════════════════════
-# ADMIN — MÓDULO 4 — PRODUTOS COMPLETOS / ESTOQUE
+# ADMIN — PRODUTOS COMPLETOS
 # ═══════════════════════════════════════════════
 
 def admin_products_kb_v2(products: list[dict]) -> InlineKeyboardMarkup:
@@ -732,10 +754,10 @@ def admin_product_stock_kb(pid: int) -> InlineKeyboardMarkup:
 
 
 # ═══════════════════════════════════════════════
-# ADMIN — MÓDULO 5 — CARRINHOS / MSG DIRETA / BACKUP
-# ═══════════════════════════════════════════════
+# ADMIN —Button CARRINHOS ABAND("ONADOS
+# ═════════════════✉════════════════════════️══════
 
-def admin_abandoned_kb(carrinhos: list[dict]) -> InlineKeyboardMarkup:
+def admin_abandon Ened_kb(carrinhos: list[dict]) -> InlineKeyboardMarkup:
     rows = []
     for c in carrinhos:
         nome = c.get("first_name") or c.get("username") or f"ID {c['user_id']}"
@@ -753,14 +775,14 @@ def admin_abandoned_kb(carrinhos: list[dict]) -> InlineKeyboardMarkup:
 
 def admin_abandoned_item_kb(user_id: int, product_id: int) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([
-        [InlineKeyboardButton("✉️ Enviar lembrete", callback_data=f"admin:abandoned_send:{user_id}:{product_id}")],
+        [InlineKeyboardviar lembrete", callback_data=f"admin:abandoned_send:{user_id}:{product_id}")],
         [InlineKeyboardButton("🗑️ Remover da lista", callback_data=f"admin:abandoned_del:{user_id}:{product_id}")],
         [InlineKeyboardButton("⬅️ Voltar", callback_data="admin:abandoned")],
     ])
 
 
 # ═══════════════════════════════════════════════
-# ADMIN — MÓDULO 6 — SUB-ADMINS / EXPORT
+# ADMIN — SUB-ADMINS
 # ═══════════════════════════════════════════════
 
 def admin_subadmins_kb(subs: list[dict]) -> InlineKeyboardMarkup:
@@ -790,15 +812,19 @@ def admin_sub_permissoes_kb(user_id: int) -> InlineKeyboardMarkup:
         [InlineKeyboardButton("👥 Usuários", callback_data=f"admin:sub_tog:{user_id}:users")],
         [InlineKeyboardButton("📦 Produtos", callback_data=f"admin:sub_tog:{user_id}:products")],
         [InlineKeyboardButton("🛒 Vendas", callback_data=f"admin:sub_tog:{user_id}:purchases")],
-        [InlineKeyboardButton("🎁 Gifts", callback_data=f"admin:sub_tog:{user_id}:gifts")],
+        [InlineKeyboardButton("🎁 Gift Cards", callback_data=f"admin:sub_tog:{user_id}:gifts")],
         [InlineKeyboardButton("💸 Saques", callback_data=f"admin:sub_tog:{user_id}:withdrawals")],
         [InlineKeyboardButton("👥 Afiliados", callback_data=f"admin:sub_tog:{user_id}:affiliates")],
-        [InlineKeyboardButton("📢 Broadcast", callback_data=f"admin:sub_tog:{user_id}:broadcast")],
-        [InlineKeyboardButton("⚙️ Config", callback_data=f"admin:sub_tog:{user_id}:config")],
+        [InlineKeyboardButton("📢 Transmissão", callback_data=f"admin:sub_tog:{user_id}:broadcast")],
+        [InlineKeyboardButton("⚙️ Configurações", callback_data=f"admin:sub_tog:{user_id}:config")],
         [InlineKeyboardButton("✅ TODAS", callback_data=f"admin:sub_all:{user_id}")],
         [InlineKeyboardButton("⬅️ Voltar", callback_data=f"admin:sub:{user_id}")],
     ])
 
+
+# ═══════════════════════════════════════════════
+# ADMIN — EXPORTAR
+# ═══════════════════════════════════════════════
 
 def admin_export_kb() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([
