@@ -203,7 +203,10 @@ def history_empty_text() -> str:
 
 
 def history_active_empty_text() -> str:
-    return "Você não tem compras ativas (não vencidas) no bot."
+    return (
+        "Você não tem compras ativas (não vencidas) no bot.\n"
+        "Use o botão abaixo para ver todas as compras."
+    )
 
 
 def _fmt_date(s) -> str:
@@ -407,7 +410,7 @@ def affiliates_active_text(user: dict, stats: dict, link: str) -> str:
 
 def top_text(rows: list[dict], filtro: str) -> str:
     titulos = {
-        "compras": "usuários que mais compraram (deste mês)",
+        "compras": "serviços mais vendidos (deste mês)",
         "recargas": "usuários que mais recarregaram",
         "gift": "usuários que mais resgataram gift cards",
         "saldo": "usuários com maior saldo",
@@ -424,6 +427,12 @@ def top_text(rows: list[dict], filtro: str) -> str:
             pos = medals[i] if i < 3 else f"{i+1}º"
             nome = r.get("first_name") or r.get("username") or f"ID {r['user_id']}"
             total = float(r.get("total") or 0)
-            linhas.append(f"{pos}) {nome} — <b>R$ {total:.2f}</b>")
+
+            if filtro == "compras":
+                # Ranking por produto — mostra nome do produto + pedidos
+                qtd = int(r.get("pedidos") or 0)
+                linhas.append(f"{pos}) {nome} {pos if i < 3 else ''} - Com {qtd} pedidos")
+            else:
+                linhas.append(f"{pos}) {nome} — <b>R$ {total:.2f}</b>")
 
     return "\n".join(linhas)
