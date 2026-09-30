@@ -1,3 +1,6 @@
+"""
+Módulo ADMIN — VENDAS v2 (completo) + GIFT CARDS + SAQUES (compat) + AFILIADOS (compat).
+"""
 import logging
 import asyncio
 from telegram import Update, ForceReply, InputFile
@@ -21,13 +24,15 @@ async def _edit_or_send(query, text: str, kb=None):
     try:
         await query.edit_message_text(text, reply_markup=kb, parse_mode=ParseMode.HTML)
     except Exception:
-        await query.message.reply_text(text, reply_markup=kb, parse_mode=ParseMode.HTML)
+        try:
+            await query.message.reply_text(text, reply_markup=kb, parse_mode=ParseMode.HTML)
+        except Exception:
+            pass
 
 
 # ═══════════════════════════════════════════════
-# VENDAS — v2 (com filtros e paginação)
+# VENDAS v2
 # ═══════════════════════════════════════════════
-
 async def admin_vendas_cb(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -95,13 +100,9 @@ async def _render_vendas(query, periodo: str = "tudo", status: str = "todos", pa
     )
 
     kb = menus.admin_vendas_kb(vendas, page, total_pages, periodo, status)
-    try:
-        await query.edit_message_text(texto, reply_markup=kb, parse_mode=ParseMode.HTML)
-    except Exception:
-        await query.message.reply_text(texto, reply_markup=kb, parse_mode=ParseMode.HTML)
+    await _edit_or_send(query, texto, kb)
 
 
-# ─── Detalhe do pedido
 async def admin_venda_detalhe_cb(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -115,7 +116,7 @@ async def admin_venda_detalhe_cb(update: Update, context: ContextTypes.DEFAULT_T
 
     p = await db.get_purchase(purchase_id)
     if not p:
-        await query.edit_message_text("❌ Pedido não encontrado.")
+        await _edit_or_send(query, "❌ Pedido não encontrado.", menus.admin_back_kb())
         return
 
     u = await db.get_user(p["user_id"])
@@ -145,13 +146,9 @@ async def admin_venda_detalhe_cb(update: Update, context: ContextTypes.DEFAULT_T
     )
 
     kb = menus.admin_venda_detalhe_kb(purchase_id, cancelado, "tudo", "todos")
-    try:
-        await query.edit_message_text(texto, reply_markup=kb, parse_mode=ParseMode.HTML)
-    except Exception:
-        pass
+    await _edit_or_send(query, texto, kb)
 
 
-# ─── Reembolso (com confirmação)
 async def admin_refund_prompt_cb(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -198,10 +195,7 @@ async def admin_refund_prompt_cb(update: Update, context: ContextTypes.DEFAULT_T
         )],
     ])
 
-    try:
-        await query.edit_message_text(texto, reply_markup=kb, parse_mode=ParseMode.HTML)
-    except Exception:
-        pass
+    await _edit_or_send(query, texto, kb)
 
 
 async def admin_refund_confirm_cb(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -259,7 +253,6 @@ async def admin_refund_confirm_cb(update: Update, context: ContextTypes.DEFAULT_
         pass
 
 
-# ─── Reativar pedido
 async def admin_venda_reactivate_cb(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -284,7 +277,6 @@ async def admin_venda_reactivate_cb(update: Update, context: ContextTypes.DEFAUL
     await admin_venda_detalhe_cb(update, context)
 
 
-# ─── Reenviar credenciais
 async def admin_venda_resend_cb(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -327,7 +319,6 @@ async def admin_venda_resend_cb(update: Update, context: ContextTypes.DEFAULT_TY
         await query.answer(f"❌ Falha: {e}", show_alert=True)
 
 
-# ─── Enviar mensagem personalizada pro cliente
 async def admin_venda_msg_cb(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -396,7 +387,6 @@ async def admin_venda_msg_handler(update: Update, context: ContextTypes.DEFAULT_
         await update.message.reply_text(f"❌ Erro: {e}")
 
 
-# ─── Exportar CSV
 async def admin_vendas_export_cb(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -434,7 +424,6 @@ async def admin_vendas_export_cb(update: Update, context: ContextTypes.DEFAULT_T
         await query.answer(f"❌ Erro: {e}", show_alert=True)
 
 
-# ─── Buscar pedido
 async def admin_purchase_search_prompt(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -485,448 +474,122 @@ async def admin_purchase_search_handler(update: Update, context: ContextTypes.DE
 
 
 # ═══════════════════════════════════════════════
-# GIFT CARDS
+# GIFT CARDS — LEGACY (compat, redireciona pra admin9)
 # ═══════════════════════════════════════════════
 async def admin_gifts_cb(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
-    if not is_admin(update.effective_user.id):
-        return
-
+    """Redireciona pra admin9."""
     try:
-        gifts = await db.admin_list_gifts(limit=10)
-        total = await db.admin_count_gifts()
-
-        if not gifts:
-            texto = (
-                "🎁 <b>Gift Cards</b>\n"
-                "━━━━━━━━━━━━━━━━━━━━━━━\n\n"
-                "<i>Nenhum gift card criado ainda.</i>\n\n"
-                "Toque em ➕ para criar os primeiros!"
-            )
-        else:
-            texto = (
-                "🎁 <b>Gift Cards</b>\n"
-                "━━━━━━━━━━━━━━━━━━━━━━━\n\n"
-                f"📊 Total: <b>{total}</b>\n"
-                f"📋 Mostrando: <b>{len(gifts)}</b> mais recentes\n\n"
-                "🟢 Livres  🔴 Resgatados\n\n"
-                "👉 Toque em um pra ver detalhes:"
-            )
-        await _edit_or_send(query, texto, menus.admin_gifts_kb(gifts))
+        from handlers import admin9
+        await admin9.admin_gifts_v2_cb(update, context)
     except Exception as e:
-        logger.exception("Erro listando gifts: %s", e)
-        await _edit_or_send(query, f"❌ Erro: {e}", menus.admin_back_kb())
+        logger.exception("Erro redirecionando gifts: %s", e)
 
 
 async def admin_gift_cb(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Redireciona 'admin:gift:X' → 'admin:gift_v2:X'."""
     query = update.callback_query
-    await query.answer()
-    if not is_admin(update.effective_user.id):
-        return
-
     try:
         code = query.data.split(":", 2)[2]
-        g = await db.get_gift(code)
-        if not g:
-            await _edit_or_send(query, "❌ Gift não encontrado.", menus.admin_back_kb())
-            return
-
-        tipo = g.get("tipo", "—")
-        if tipo == "saldo":
-            valor_txt = f"R$ {float(g.get('valor') or 0):.2f}"
-        else:
-            valor_txt = f"Produto ID {g.get('product_id')}"
-
-        resgatado = "✅ Sim" if g.get("redeemed_by") else "❌ Não"
-
-        texto = (
-            "🎁 <b>Detalhes do Gift Card</b>\n"
-            "━━━━━━━━━━━━━━━━━━━━━━━\n\n"
-            f"🔑 Código: <code>{g['code']}</code>\n"
-            f"📦 Tipo: <b>{tipo}</b>\n"
-            f"💰 Valor: <b>{valor_txt}</b>\n"
-            f"👤 Resgatado: <b>{resgatado}</b>\n"
-            f"🕐 Criado: <b>{str(g.get('created_at') or '')[:16]}</b>"
-        )
-        if g.get("redeemed_by"):
-            texto += f"\n🎯 Resgatado por: <code>{g['redeemed_by']}</code>"
-            texto += f"\n📅 Data: <b>{str(g.get('redeemed_at') or '')[:16]}</b>"
-
-        await _edit_or_send(
-            query, texto,
-            menus.admin_gift_kb(code, redeemed=bool(g.get("redeemed_by"))),
-        )
+        query.data = f"admin:gift_v2:{code}"
+        from handlers import admin9
+        await admin9.admin_gift_v2_cb(update, context)
     except Exception as e:
-        logger.exception("Erro mostrando gift: %s", e)
+        logger.exception("Erro redirecionando gift: %s", e)
 
 
 async def admin_gift_del_cb(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Redireciona pra revogar."""
     query = update.callback_query
-    await query.answer()
-    if not is_admin(update.effective_user.id):
-        return
-
     try:
         code = query.data.split(":", 2)[2]
-        await db.admin_delete_gift(code)
-        await db.log_admin_action(update.effective_user.id, "gift_delete", code)
-
-        await _edit_or_send(
-            query,
-            f"🗑️ <b>Gift Card Revogado</b>\n\n"
-            f"🔑 Código: <code>{code}</code>\n"
-            "Não poderá mais ser resgatado.",
-            menus.admin_back_kb(),
-        )
+        query.data = f"admin:gift_revoke:{code}"
+        from handlers import admin9
+        await admin9.admin_gift_revoke_cb(update, context)
     except Exception as e:
-        logger.exception("Erro revogando gift: %s", e)
+        logger.exception("Erro redirecionando gift_del: %s", e)
 
 
 async def admin_gift_create_prompt(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
-    if not is_admin(update.effective_user.id):
-        return
-
+    """Redireciona pra admin9."""
     try:
-        await query.edit_message_text(
-            "➕ <b>Criar Gift Cards</b>\n"
-            "━━━━━━━━━━━━━━━━━━━━━━━\n\n"
-            "Escolha o <b>tipo</b> de gift que será criado:",
-            reply_markup=menus.admin_gift_type_kb(),
-            parse_mode=ParseMode.HTML,
-        )
+        from handlers import admin9
+        await admin9.admin_gift_create_cb(update, context)
     except Exception as e:
-        logger.exception("Erro abrindo criação de gift: %s", e)
+        logger.exception("Erro redirecionando gift_create: %s", e)
 
 
 async def admin_gift_tipo_cb(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Redireciona pra admin9 (novo tipo)."""
     query = update.callback_query
-    await query.answer()
-    if not is_admin(update.effective_user.id):
-        return
-
-    tipo = query.data.split(":")[2]
-    context.user_data["admin_gift_tipo"] = tipo
-
-    if tipo == "saldo":
-        try:
-            await query.edit_message_text(
-                "💰 <b>Gift de Saldo</b>\n\n"
-                "Use o campo abaixo para enviar o <b>valor</b> de cada gift "
-                "(ex: <code>5.00</code>):",
-                parse_mode=ParseMode.HTML,
-            )
-        except Exception:
-            pass
-
-        try:
-            await context.bot.send_message(
-                chat_id=query.message.chat_id,
-                text="👇 <b>Digite o valor:</b>",
-                reply_markup=ForceReply(selective=True),
-                parse_mode=ParseMode.HTML,
-            )
-        except Exception:
-            pass
-    else:
-        try:
-            await query.edit_message_text(
-                "🎁 <b>Gift de Produto</b>\n\n"
-                "Use o campo abaixo para enviar o <b>ID do produto</b> "
-                "(ex: <code>1</code>):",
-                parse_mode=ParseMode.HTML,
-            )
-        except Exception:
-            pass
-
-        try:
-            await context.bot.send_message(
-                chat_id=query.message.chat_id,
-                text="👇 <b>Digite o ID:</b>",
-                reply_markup=ForceReply(selective=True),
-                parse_mode=ParseMode.HTML,
-            )
-        except Exception:
-            pass
+    try:
+        tipo = query.data.split(":")[2]
+        query.data = f"admin:gift_new:{tipo}"
+        from handlers import admin9
+        await admin9.admin_gift_new_cb(update, context)
+    except Exception as e:
+        logger.exception("Erro redirecionando gift_tipo: %s", e)
 
 
 async def admin_gift_valor_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    tipo = context.user_data.get("admin_gift_tipo")
-    if not tipo:
-        return
-    if not is_admin(update.effective_user.id):
-        return
-
-    text = (update.message.text or "").strip().replace(",", ".")
-
-    if text.startswith("/"):
-        context.user_data.pop("admin_gift_tipo", None)
-        return
-
-    if tipo == "saldo":
-        try:
-            valor = float(text)
-            if valor <= 0:
-                raise ValueError
-        except ValueError:
-            await update.message.reply_text("❌ Valor inválido.")
-            return
-        context.user_data["admin_gift_valor"] = valor
-        context.user_data["admin_gift_produto"] = None
-    else:
-        try:
-            pid = int(text)
-            prod = await db.get_product(pid)
-            if not prod:
-                await update.message.reply_text("❌ Produto não encontrado. Tente outro ID.")
-                return
-            context.user_data["admin_gift_produto"] = pid
-            context.user_data["admin_gift_valor"] = 0
-        except ValueError:
-            await update.message.reply_text("❌ ID inválido.")
-            return
-
+    """Redireciona pro wizard novo."""
     try:
-        await update.message.reply_text(
-            "🔢 <b>Quantos gift cards devo criar?</b>\n\n"
-            "Use o campo abaixo (ex: <code>10</code>), máximo 200:",
-            reply_markup=ForceReply(selective=True),
-            parse_mode=ParseMode.HTML,
-        )
+        from handlers import admin9
+        await admin9.admin_gift_wizard_handler(update, context)
     except Exception as e:
-        logger.exception("Erro ForceReply quantidade: %s", e)
+        logger.exception("Erro redirecionando gift_valor: %s", e)
 
 
 async def admin_gift_qtd_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not context.user_data.get("admin_gift_tipo"):
-        return
-    if not is_admin(update.effective_user.id):
-        return
-
-    text = (update.message.text or "").strip()
-
-    if text.startswith("/"):
-        for k in ("admin_gift_tipo", "admin_gift_valor", "admin_gift_produto"):
-            context.user_data.pop(k, None)
-        return
-
+    """Redireciona pro wizard novo."""
     try:
-        qtd = int(text)
-        if qtd <= 0 or qtd > 200:
-            raise ValueError
-    except ValueError:
-        await update.message.reply_text("❌ Quantidade inválida (1 a 200).")
-        return
-
-    tipo = context.user_data.pop("admin_gift_tipo", "saldo")
-    valor = context.user_data.pop("admin_gift_valor", 0)
-    pid = context.user_data.pop("admin_gift_produto", None)
-
-    try:
-        codigos = await db.admin_create_gift_batch(
-            code_base="LARI",
-            quantidade=qtd,
-            tipo=tipo,
-            valor=valor,
-            product_id=pid,
-        )
+        from handlers import admin9
+        await admin9.admin_gift_wizard_handler(update, context)
     except Exception as e:
-        logger.exception("Erro criando gifts: %s", e)
-        await update.message.reply_text(f"❌ Erro: {e}")
-        return
-
-    await db.log_admin_action(
-        update.effective_user.id, "gift_create", tipo, f"qtd={len(codigos)}",
-    )
-
-    lista = "\n".join(f"<code>{c}</code>" for c in codigos)
-
-    await update.message.reply_text(
-        f"✅ <b>{len(codigos)} Gift Cards Criados!</b>\n"
-        "━━━━━━━━━━━━━━━━━━━━━━━\n\n"
-        f"📦 Tipo: <b>{tipo}</b>\n"
-        f"💰 Valor: <b>R$ {valor:.2f}</b>\n\n"
-        "🔑 <b>Códigos:</b>\n"
-        f"{lista}",
-        reply_markup=menus.admin_back_kb(),
-        parse_mode=ParseMode.HTML,
-    )
+        logger.exception("Erro redirecionando gift_qtd: %s", e)
 
 
 # ═══════════════════════════════════════════════
-# SAQUES
+# SAQUES — LEGACY (compat, redireciona pra admin7)
 # ═══════════════════════════════════════════════
 async def admin_withdrawals_cb(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
-    if not is_admin(update.effective_user.id):
-        return
-
     try:
-        wds = await db.admin_list_withdrawals(limit=10)
-        pendentes = await db.admin_count_withdrawals("pending")
-
-        if not wds:
-            texto = (
-                "💸 <b>Saques</b>\n"
-                "━━━━━━━━━━━━━━━━━━━━━━━\n\n"
-                "<i>Nenhum saque solicitado ainda.</i>"
-            )
-        else:
-            linhas = [
-                "💸 <b>Gerenciar Saques</b>",
-                "━━━━━━━━━━━━━━━━━━━━━━━\n",
-                f"⏳ Pendentes: <b>{pendentes}</b>\n",
-                "👉 Toque em um saque para aprovar/rejeitar:\n",
-            ]
-            for w in wds:
-                icon = {
-                    "pending": "🟡",
-                    "processed": "🟢",
-                    "rejected": "🔴",
-                }.get(w.get("status"), "⚪")
-
-                u = await db.get_user(w["user_id"])
-                nome = (u or {}).get("first_name") or (u or {}).get("username") or f"ID {w['user_id']}"
-
-                linhas.append(
-                    f"{icon} <b>{nome[:25]}</b> — <b>R$ {float(w['amount']):.2f}</b>"
-                )
-            texto = "\n".join(linhas)
-
-        await _edit_or_send(query, texto, menus.admin_withdrawals_kb(wds))
+        from handlers import admin7
+        await admin7.admin_saques_cb(update, context)
     except Exception as e:
-        logger.exception("Erro listando saques: %s", e)
+        logger.exception("Erro redirecionando withdrawals: %s", e)
 
 
 async def admin_withdrawal_cb(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
-    await query.answer()
-    if not is_admin(update.effective_user.id):
-        return
-
     try:
         wid = query.data.split(":", 2)[2]
-        w = await db.admin_get_withdrawal(wid)
-        if not w:
-            await _edit_or_send(query, "❌ Saque não encontrado.", menus.admin_back_kb())
-            return
-
-        u = await db.get_user(w["user_id"])
-        nome = (u or {}).get("first_name") or "—"
-        username = (u or {}).get("username") or "—"
-
-        status_icon = {
-            "pending": "🟡 Pendente",
-            "processed": "🟢 Processado",
-            "rejected": "🔴 Rejeitado",
-        }.get(w.get("status"), "—")
-
-        texto = (
-            "💸 <b>Detalhes do Saque</b>\n"
-            "━━━━━━━━━━━━━━━━━━━━━━━\n\n"
-            f"🎫 ID: <code>{w['id']}</code>\n\n"
-            "👤 <b>Solicitante:</b>\n"
-            f"├ Nome: <b>{nome}</b>\n"
-            f"├ Username: @{username}\n"
-            f"└ ID: <code>{w['user_id']}</code>\n\n"
-            f"💰 Valor: <b>R$ {float(w['amount']):.2f}</b>\n"
-            f"🔑 Chave: <code>{w.get('pix_key') or '—'}</code>\n"
-            f"📦 Tipo: <b>{w.get('pix_key_type') or '—'}</b>\n\n"
-            f"📅 Solicitado: <b>{str(w.get('created_at') or '')[:16]}</b>\n"
-            f"📡 Status: <b>{status_icon}</b>"
-        )
-
-        await _edit_or_send(
-            query, texto,
-            menus.admin_withdrawal_kb(wid, w.get("status", "pending")),
-        )
+        query.data = f"admin:saque:{wid}"
+        from handlers import admin7
+        await admin7.admin_saque_detalhe_cb(update, context)
     except Exception as e:
-        logger.exception("Erro mostrando saque: %s", e)
+        logger.exception("Erro redirecionando withdrawal: %s", e)
 
 
 async def admin_wd_approve_cb(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
-    await query.answer()
-    if not is_admin(update.effective_user.id):
-        return
-
     try:
         wid = query.data.split(":", 2)[2]
-        w = await db.admin_approve_withdrawal(wid)
-
-        if not w:
-            await _edit_or_send(query, "❌ Saque não encontrado.", menus.admin_back_kb())
-            return
-
-        await db.log_admin_action(
-            update.effective_user.id, "withdrawal_approve", wid,
-            f"R$ {float(w['amount']):.2f}",
-        )
-
-        try:
-            await context.bot.send_message(
-                chat_id=w["user_id"],
-                text=(
-                    "✅ <b>Pagamento Realizado!</b>\n"
-                    "━━━━━━━━━━━━━━━━━━━━━━━\n\n"
-                    f"💰 Valor: <b>R$ {float(w['amount']):.2f}</b>\n"
-                    f"🔑 Chave: <code>{w.get('pix_key') or '—'}</code>\n\n"
-                    "Obrigado por confiar na nossa loja! 💙"
-                ),
-                parse_mode=ParseMode.HTML,
-            )
-        except Exception:
-            pass
-
-        await _edit_or_send(
-            query,
-            f"✅ <b>Saque Aprovado!</b>\n\n"
-            f"💰 R$ {float(w['amount']):.2f}\n"
-            f"🔑 Chave: <code>{w['pix_key']}</code>",
-            menus.admin_back_kb(),
-        )
+        query.data = f"admin:saque_ok:{wid}"
+        from handlers import admin7
+        await admin7.admin_saque_ok_prompt_cb(update, context)
     except Exception as e:
-        logger.exception("Erro aprovando saque: %s", e)
+        logger.exception("Erro redirecionando wd_approve: %s", e)
 
 
 async def admin_wd_reject_cb(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
-    await query.answer()
-    if not is_admin(update.effective_user.id):
-        return
-
     try:
         wid = query.data.split(":", 2)[2]
-        w = await db.admin_reject_withdrawal(wid)
-
-        if not w:
-            await _edit_or_send(query, "❌ Saque não encontrado.", menus.admin_back_kb())
-            return
-
-        await db.log_admin_action(update.effective_user.id, "withdrawal_reject", wid)
-
-        try:
-            await context.bot.send_message(
-                chat_id=w["user_id"],
-                text=(
-                    "❌ <b>Saque Rejeitado</b>\n\n"
-                    f"💰 Valor: <b>R$ {float(w['amount']):.2f}</b>\n\n"
-                    "O valor continua disponível no seu saldo.\n"
-                    "Entre em contato com o suporte para mais informações."
-                ),
-                parse_mode=ParseMode.HTML,
-            )
-        except Exception:
-            pass
-
-        await _edit_or_send(
-            query, "❌ <b>Saque Rejeitado.</b>", menus.admin_back_kb(),
-        )
+        query.data = f"admin:saque_no:{wid}"
+        from handlers import admin7
+        await admin7.admin_saque_no_prompt_cb(update, context)
     except Exception as e:
-        logger.exception("Erro rejeitando saque: %s", e)
+        logger.exception("Erro redirecionando wd_reject: %s", e)
 
 
 # ═══════════════════════════════════════════════
