@@ -327,7 +327,6 @@ def api_loja_config():
     return jsonify(ok=True, config=defaults)
 
 
-# ─── PIX (Mercado Pago) ───
 @flask_app.post("/api/loja/pix")
 def api_loja_pix():
     from services import mercadopago
@@ -421,7 +420,6 @@ async def _finalizar_pagamento_loja(payment_id):
     tipo  = pix.get("tipo", "recarga")
     valor = float(pix["valor"])
 
-    # ═══ RECARGA: credita balance_web + notifica canal ═══
     if tipo == "recarga":
         await db._db.execute(
             "UPDATE users SET balance_web = balance_web + ? WHERE user_id = ?",
@@ -441,15 +439,11 @@ async def _finalizar_pagamento_loja(payment_id):
 
         try:
             await channel_notify.notify_topup(
-                bot_app.bot if bot_app else None,
-                user,
-                valor,
-                0.0,
+                bot_app.bot if bot_app else None, user, valor, 0.0,
             )
         except Exception as e:
             logger.warning("Falha notificando canal (recarga): %s", e)
 
-    # ═══ COMPRA: cria purchase + notifica privado + canal ═══
     elif tipo == "compra":
         cur = await db._db.execute(
             "SELECT purchase_id, itens_json FROM pix_meta WHERE pix_id = ?",
@@ -524,10 +518,7 @@ async def _finalizar_pagamento_loja(payment_id):
 
         try:
             await channel_notify.notify_new_access(
-                bot_app.bot if bot_app else None,
-                user,
-                product,
-                purchase,
+                bot_app.bot if bot_app else None, user, product, purchase,
             )
         except Exception as e:
             logger.warning("Falha notificando canal (compra): %s", e)
@@ -614,10 +605,7 @@ async def _comprar_com_saldo_web(user_id, itens, total):
 
     try:
         await channel_notify.notify_new_access(
-            bot_app.bot if bot_app else None,
-            user,
-            product,
-            purchase,
+            bot_app.bot if bot_app else None, user, product, purchase,
         )
     except Exception as e:
         logger.warning("Falha notificando canal (saldo): %s", e)
@@ -954,6 +942,17 @@ def main():
 
     bot_app = build_app()
 
+    # ─── allowed_updates garante que o PTB receba updates de chat_member
+    _ALLOWED = [
+        "message",
+        "edited_message",
+        "callback_query",
+        "chat_member",
+        "my_chat_member",
+        "inline_query",
+        "chosen_inline_result",
+    ]
+
     if WEBHOOK_URL:
         logger.info("Rodando via WEBHOOK em %s", WEBHOOK_URL)
         bot_app.run_webhook(
@@ -962,10 +961,14 @@ def main():
             url_path=BOT_TOKEN,
             webhook_url=f"{WEBHOOK_URL}/{BOT_TOKEN}",
             drop_pending_updates=True,
+            allowed_updates=_ALLOWED,
         )
     else:
-        logger.info("Rodando via POLLING")
-        bot_app.run_polling(drop_pending_updates=True)
+        logger.info("Rodando via POLLING (allowed_updates)")
+        bot_app.run_polling(
+            drop_pending_updates=True,
+            allowed_updates=_ALLOWED,
+        )
 
 
 if __name__ == "__main__":
