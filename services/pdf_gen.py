@@ -152,3 +152,79 @@ def gerar_pdf_pedido(purchase: dict, item: dict | None = None) -> bytes:
     c.save()
     buf.seek(0)
     return buf.getvalue()
+
+
+# ═══════════════════════════════════════════════
+# COMPROVANTE DE SAQUE (individual) — admin7
+# ═══════════════════════════════════════════════
+def gerar_comprovante_saque(wd: dict, user: dict, store_name: str = "Minha Loja") -> bytes:
+    """Gera PDF de comprovante de um único saque."""
+    buf = io.BytesIO()
+    c = canvas.Canvas(buf, pagesize=A4)
+    w, h = A4
+
+    # Cabeçalho
+    c.setFont("Helvetica-Bold", 22)
+    c.drawString(20 * mm, h - 25 * mm, store_name)
+    c.setFont("Helvetica", 12)
+    c.setFillColorRGB(0.35, 0.35, 0.35)
+    c.drawString(20 * mm, h - 32 * mm, "Comprovante de Saque")
+    c.drawString(20 * mm, h - 38 * mm, f"Emitido em: {datetime.now().strftime('%d/%m/%Y %H:%M')}")
+
+    c.setStrokeColorRGB(0.85, 0.85, 0.85)
+    c.line(20 * mm, h - 44 * mm, w - 20 * mm, h - 44 * mm)
+
+    # Bloco verde "PAGO"
+    y = h - 58 * mm
+    c.setFillColorRGB(0.13, 0.79, 0.42)
+    c.rect(20 * mm, y - 5 * mm, 45 * mm, 12 * mm, fill=1, stroke=0)
+    c.setFillColorRGB(1, 1, 1)
+    c.setFont("Helvetica-Bold", 12)
+    c.drawString(24 * mm, y - 1 * mm, "PAGO")
+
+    # Valor
+    c.setFillColorRGB(0, 0, 0)
+    c.setFont("Helvetica-Bold", 14)
+    c.drawString(20 * mm, y - 18 * mm, f"Valor: R$ {float(wd.get('amount') or 0):.2f}")
+
+    # Bloco dados
+    y -= 35 * mm
+    c.setFont("Helvetica-Bold", 12)
+    c.drawString(20 * mm, y, "Dados do Saque")
+    y -= 8 * mm
+
+    c.setFont("Helvetica", 10)
+    c.drawString(20 * mm, y, f"ID do saque: {wd.get('id') or '-'}")
+    y -= 6 * mm
+    c.drawString(20 * mm, y, f"Data do pedido: {_fmt(wd.get('created_at'))}")
+    y -= 6 * mm
+    c.drawString(20 * mm, y, f"Data do processamento: {_fmt(wd.get('processed_at'))}")
+    y -= 6 * mm
+    c.drawString(20 * mm, y, f"Tipo de chave: {wd.get('pix_key_type') or '-'}")
+    y -= 6 * mm
+    c.drawString(20 * mm, y, f"Chave PIX: {wd.get('pix_key') or '-'}")
+    y -= 6 * mm
+    c.drawString(20 * mm, y, f"Status: {wd.get('status') or 'pending'}")
+
+    # Bloco beneficiário
+    y -= 14 * mm
+    c.setFont("Helvetica-Bold", 12)
+    c.drawString(20 * mm, y, "Beneficiário")
+    y -= 8 * mm
+
+    c.setFont("Helvetica", 10)
+    c.drawString(20 * mm, y, f"Nome: {user.get('first_name') or 'Não informado'}")
+    y -= 6 * mm
+    c.drawString(20 * mm, y, f"Username: @{user.get('username') or '-'}")
+    y -= 6 * mm
+    c.drawString(20 * mm, y, f"ID Telegram: {user.get('user_id') or '-'}")
+
+    # Rodapé
+    c.setFont("Helvetica-Oblique", 8)
+    c.setFillColorRGB(0.5, 0.5, 0.5)
+    c.drawString(20 * mm, 15 * mm, "Este documento é um comprovante automático. Guarde em local seguro.")
+
+    c.showPage()
+    c.save()
+    buf.seek(0)
+    return buf.getvalue()
