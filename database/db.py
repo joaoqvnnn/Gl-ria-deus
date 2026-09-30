@@ -140,11 +140,10 @@ async def init_db():
             value TEXT
         );
 
-        CREATE INDEX IF NOT EXISTS idx_users_referred_by ON users(referred_by);
-        CREATE INDEX IF NOT EXISTS idx_purchases_user   ON purchases(user_id);
-        CREATE INDEX IF NOT EXISTS idx_purchases_prod   ON purchases(product_id);
-        CREATE INDEX IF NOT EXISTS idx_pix_user         ON pix_pending(user_id);
-        CREATE INDEX IF NOT EXISTS idx_cart_notified    ON cart_views(notified);
+        CREATE INDEX IF NOT EXISTS idx_purchases_user ON purchases(user_id);
+        CREATE INDEX IF NOT EXISTS idx_purchases_prod ON purchases(product_id);
+        CREATE INDEX IF NOT EXISTS idx_pix_user       ON pix_pending(user_id);
+        CREATE INDEX IF NOT EXISTS idx_cart_notified  ON cart_views(notified);
         """
     )
     await _db.commit()
@@ -162,6 +161,11 @@ async def init_db():
 
     # ─── Coluna nova em products
     await _try_alter("ALTER TABLE products ADD COLUMN image_url TEXT")
+
+    # ─── Índice que depende de coluna recém-criada
+    await _try_alter(
+        "CREATE INDEX IF NOT EXISTS idx_users_referred_by ON users(referred_by)"
+    )
 
 
 # ═══════════════════════════════════════════════
@@ -394,8 +398,7 @@ async def create_purchase_with_id(purchase_id, user_id, product_id, product_name
                                   quantity, total, email, password, days=30):
     """
     Como create_purchase, mas usando um ID externo (ex: PURCHASE_1712345678).
-    Usado quando o pagamento vem do Mercado Pago / Web App e já tem
-    um purchase_id definido no frontend.
+    Usado quando o pagamento vem do Mercado Pago / Web App.
     """
     expires = (datetime.now() + timedelta(days=days)).strftime("%Y-%m-%d %H:%M:%S")
     await _db.execute(
