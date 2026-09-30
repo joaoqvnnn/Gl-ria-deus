@@ -7,10 +7,21 @@ from config import CHANNEL_LINK, SUPPORT_LINK, SUPPORT_MESSAGE, MINIAPP_BASE_URL
 # HELPERS
 # ═══════════════════════════════════════════════
 def _support_url() -> str:
-    """URL do suporte com mensagem pré-preenchida."""
     if not SUPPORT_LINK:
         return "https://t.me/"
     return f"{SUPPORT_LINK}?text={quote(SUPPORT_MESSAGE)}"
+
+
+def _copy_button(text: str, label: str = "📋 Copiar PIX", fallback_data: str = "") -> InlineKeyboardButton:
+    """
+    Tenta usar CopyTextButton (silencioso, PTB 21.2+).
+    Se não existir, usa callback (popup).
+    """
+    try:
+        from telegram import CopyTextButton
+        return InlineKeyboardButton(label, copy_text=CopyTextButton(text=text))
+    except Exception:
+        return InlineKeyboardButton(label, callback_data=fallback_data)
 
 
 # ═══════════════════════════════════════════════
@@ -24,10 +35,6 @@ def gate_keyboard() -> InlineKeyboardMarkup:
 
 
 def main_menu_keyboard(user_id: int | None = None) -> InlineKeyboardMarkup:
-    """
-    Menu principal.
-    Se user_id for passado, o botão 'Abrir Loja' vira Web App (abre direto).
-    """
     if user_id:
         loja_url = f"{MINIAPP_BASE_URL}/loja/{user_id}"
         loja_btn = InlineKeyboardButton(
@@ -99,9 +106,14 @@ def insufficient_keyboard(product_id: int, quantity: int, total: float) -> Inlin
     ])
 
 
-def pix_keyboard(pix_id: str) -> InlineKeyboardMarkup:
+def pix_keyboard(pix_id: str, copia_cola: str = "") -> InlineKeyboardMarkup:
+    copy_btn = _copy_button(
+        copia_cola or "",
+        label="📋 Copiar PIX",
+        fallback_data=f"pix:copy:{pix_id}",
+    )
     return InlineKeyboardMarkup([
-        [InlineKeyboardButton("📋 Copiar PIX", callback_data=f"pix:copy:{pix_id}")],
+        [copy_btn],
         [InlineKeyboardButton("⏰ AGUARDANDO PAGAMENTO", callback_data=f"pix:check:{pix_id}")],
         [InlineKeyboardButton("❌ Cancelar", callback_data=f"pix:cancel:{pix_id}")],
     ])
@@ -227,9 +239,14 @@ def topup_menu_keyboard() -> InlineKeyboardMarkup:
     ])
 
 
-def topup_pix_keyboard(pix_id: str) -> InlineKeyboardMarkup:
+def topup_pix_keyboard(pix_id: str, copia_cola: str = "") -> InlineKeyboardMarkup:
+    copy_btn = _copy_button(
+        copia_cola or "",
+        label="📋 Copiar PIX",
+        fallback_data=f"toppix:copy:{pix_id}",
+    )
     return InlineKeyboardMarkup([
-        [InlineKeyboardButton("📋 Copiar PIX", callback_data=f"toppix:copy:{pix_id}")],
+        [copy_btn],
         [InlineKeyboardButton("⏰ AGUARDANDO PAGAMENTO", callback_data=f"toppix:check:{pix_id}")],
         [InlineKeyboardButton("❌ Cancelar", callback_data=f"toppix:cancel:{pix_id}")],
     ])
@@ -254,10 +271,6 @@ def affiliates_inactive_keyboard() -> InlineKeyboardMarkup:
 
 
 def affiliates_active_keyboard(user_id: int | None = None) -> InlineKeyboardMarkup:
-    """
-    Teclado ativo de afiliados.
-    Se user_id for passado, o botão 'Cadastrar Senha de Saque' vira Web App.
-    """
     if user_id:
         senha_url = f"{MINIAPP_BASE_URL}/miniapp/senha/{user_id}"
         setpin_btn = InlineKeyboardButton(
