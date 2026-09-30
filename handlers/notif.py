@@ -1,15 +1,20 @@
 """
-Comandos admin para enviar mensagens customizadas com botões.
-Sintaxe simples e poderosa.
+handlers/notif.py — Comandos admin para notificações customizadas.
 
-Exemplos:
-  /notif produto 5           → manda "produto voltou" do produto ID 5
-  /notif estoque 1,3,5       → manda "bot abastecido" com produtos 1,3,5
-  /notif abandono            → testa carrinho abandonado
-  /notif cadastro            → convite de cadastro
-  /notif gift                → convite de gift card
-  /broadcast                 → wizard para mensagem customizada
+Uso:
+  /notif produto <id>           → manda "produto voltou" pro canal
+  /notif estoque 1,3,5          → manda "bot abastecido" com produtos 1,3,5
+  /notif cadastro               → convite de cadastro
+  /notif gift                   → convite de gift card
+
+  /broadcast
+  <texto>
+  ---
+  [{"text":"Comprar agora","action":"direct:product:3"}]
+  ---
+  canal | estoque | todos | me
 """
+import json
 import logging
 from telegram import Update
 from telegram.constants import ParseMode
@@ -27,6 +32,9 @@ def _is_admin(user_id: int) -> bool:
     return user_id in ADMIN_IDS
 
 
+# ═══════════════════════════════════════════════
+# /notif
+# ═══════════════════════════════════════════════
 async def notif_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not _is_admin(update.effective_user.id):
         return
@@ -38,39 +46,39 @@ async def notif_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "<code>/notif estoque 1,3,5</code> — bot abastecido\n"
             "<code>/notif cadastro</code> — convite cadastro\n"
             "<code>/notif gift</code> — convite gift card\n\n"
-            "Ou use <code>/enviar &lt;texto&gt;</code> para broadcast simples.",
+            "Ou use <code>/broadcast</code> para mensagem customizada.",
             parse_mode=ParseMode.HTML,
         )
         return
 
     tipo = context.args[0].lower()
 
-    # ─── produto voltou
+    # ─── /notif produto <id>
     if tipo == "produto" and len(context.args) >= 2:
         try:
             pid = int(context.args[1])
         except ValueError:
-            await update.message.reply_text("ID inválido.")
+            await update.message.reply_text("❌ ID inválido.")
             return
 
         product = await db.get_product(pid)
         if not product:
-            await update.message.reply_text("Produto não encontrado.")
+            await update.message.reply_text("❌ Produto não encontrado.")
             return
 
         text = notif_templates.template_produto_voltou(product)
         kb = menus.direct_product_keyboard(pid)
 
-        destinos = _get_destinos(context)
+        destinos = _get_destinos()
         await _send_to_destinos(context, destinos, text, kb)
         await update.message.reply_text("✅ Notificação enviada.")
         return
 
-    # ─── bot abastecido
+    # ─── /notif estoque 1,3,5
     if tipo == "estoque" and len(context.args) >= 2:
         ids = [int(x) for x in context.args[1].split(",") if x.strip().isdigit()]
         if not ids:
-            await update.message.reply_text("IDs inválidos.")
+            await update.message.reply_text("❌ IDs inválidos.")
             return
 
         produtos = []
@@ -80,53 +88,59 @@ async def notif_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 produtos.append(p)
 
         if not produtos:
-            await update.message.reply_text("Nenhum produto encontrado.")
+            await update.message.reply_text("❌ Nenhum produto encontrado.")
             return
 
         text = notif_templates.template_bot_abastecido(produtos)
         kb = menus.direct_catalog_keyboard()
 
-        destinos = _get_destinos(context)
+        destinos = _get_destinos()
         await _send_to_destinos(context, destinos, text, kb)
         await update.message.reply_text("✅ Notificação enviada.")
         return
 
-    # ─── cadastro
+    # ─── /notif cadastro
     if tipo == "cadastro":
         text = notif_templates.template_boas_vindas_cadastro()
         kb = menus.direct_start_keyboard()
-        destinos = _get_destinos(context)
+        destinos = _get_destinos()
         await _send_to_destinos(context, destinos, text, kb)
         await update.message.reply_text("✅ Enviado.")
         return
 
-    # ─── gift
+    # ─── /notif gift
     if tipo == "gift":
         text = notif_templates.template_gift_card()
         kb = menus.direct_gift_keyboard()
-        destinos = _get_destinos(context)
+        destinos = _get_destinos()
         await _send_to_destinos(context, destinos, text, kb)
         await update.message.reply_text("✅ Enviado.")
         return
 
-    await update.message.reply_text("Tipo desconhecido. Use /notif para ver ajuda.")
+    await update.message.reply_text("❌ Tipo desconhecido. Use /notif para ver ajuda.")
 
 
+# ═══════════════════════════════════════════════
+# /broadcast
+# ═══════════════════════════════════════════════
 async def broadcast_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Envia uma mensagem customizada em formato JSON para o canal configurado.
-    Exemplo:
+    """
+    Envia mensagem customizada com botões.
+
+    Formato:
         /broadcast
-        <texto da mensagem>
+        <texto>
         ---
         [{"text":"Comprar agora","action":"direct:product:3"}]
         ---
-        canal|estoque|todos
+        canal|estoque|todos|me
     """
     if not _is_admin(update.effective_user.id):
         return
 
     raw = update.message.text or ""
     body = raw.replace("/broadcast", "", 1).strip()
+
     if not body:
         await update.message.reply_text(
             "📢 <b>Uso:</b>\n\n"
@@ -145,12 +159,13 @@ async def broadcast_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     try:
         texto, botoes_json, destino = [p.strip() for p in body.split("---", 2)]
-        import json
         botoes = json.loads(botoes_json)
         kb = menus.direct_custom_keyboard(botoes)
     except Exception as e:
         await update.message.reply_text(f"❌ Erro no formato: {e}")
         return
+
+    destino = destino.lower().strip()
 
     destinos = []
     if destino == "canal" and NOTIF_CHANNEL_ID:
@@ -170,7 +185,10 @@ async def broadcast_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("✅ Broadcast enviado.")
 
 
-def _get_destinos(context: ContextTypes.DEFAULT_TYPE) -> list:
+# ═══════════════════════════════════════════════
+# HELPERS
+# ═══════════════════════════════════════════════
+def _get_destinos() -> list:
     """Retorna lista padrão: canal de compras + canal de estoque."""
     return [x for x in [NOTIF_CHANNEL_ID, STOCK_CHANNEL_ID] if x]
 
