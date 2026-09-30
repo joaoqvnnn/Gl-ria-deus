@@ -1,5 +1,5 @@
 import re
-from telegram import Update, ForceReply
+from telegram import Update
 from telegram.constants import ParseMode
 from telegram.ext import ContextTypes
 
@@ -8,8 +8,10 @@ from keyboards import menus
 from texts import messages
 
 
+# ═══════════════════════════════════════════════
+# ✏️ ABRIR MENU DE ALTERAR DADOS
+# ═══════════════════════════════════════════════
 async def alter_open(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """EDITS a mensagem atual para o menu de Alterar Dados."""
     query = update.callback_query
     await query.answer()
 
@@ -23,8 +25,10 @@ async def alter_open(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 
+# ═══════════════════════════════════════════════
+# ✏️ PEDIR WHATSAPP (sem ForceReply)
+# ═══════════════════════════════════════════════
 async def alter_whatsapp(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """EDITS para pedir o WhatsApp + envia ForceReply."""
     query = update.callback_query
     await query.answer()
 
@@ -39,13 +43,10 @@ async def alter_whatsapp(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception:
         pass
 
-    await context.bot.send_message(
-        chat_id=query.message.chat_id,
-        text="Digite abaixo 👇",
-        reply_markup=ForceReply(selective=True),
-    )
 
-
+# ═══════════════════════════════════════════════
+# ✏️ RECEBE O WHATSAPP
+# ═══════════════════════════════════════════════
 async def whatsapp_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not context.user_data.get("awaiting_whatsapp"):
         return
