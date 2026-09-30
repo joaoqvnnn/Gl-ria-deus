@@ -281,7 +281,7 @@
 
         .carousel-dots {
             position: absolute; bottom: 12px; left: 50%; transform: translateX(-50%);
-            display: none; /* removido indicadores */
+            display: none;
         }
 
         .search-section { display: flex; flex-direction: column; gap: 16px; }
@@ -1636,7 +1636,7 @@
         let ageVerified = false;
         let storeConfig = {};
         let currentOrderId = null;
-        let currentPurchaseIdLocal = null;   // ← ADICIONADO
+        let currentPurchaseIdLocal = null;
         let isPurchasePix = false;
         let currentPaymentId = null;
         let paymentPollingTimer = null;
@@ -1647,21 +1647,32 @@
         async function initUser() {
             const tg = window.Telegram?.WebApp;
             let userName = 'Visitante';
+
+            // Tenta pegar do Telegram primeiro
             if (tg && tg.initDataUnsafe && tg.initDataUnsafe.user) {
                 userId = tg.initDataUnsafe.user.id;
-                userName = tg.initDataUnsafe.user.username ? '@' + tg.initDataUnsafe.user.username : 'ID: ' + userId;
+                userName = tg.initDataUnsafe.user.username
+                    ? '@' + tg.initDataUnsafe.user.username
+                    : 'ID: ' + userId;
             } else {
+                // Fallback: pega da URL (que veio do Flask)
                 userId = window.__USER_ID__ || null;
             }
+
             if (!userId) return;
 
             try {
                 const r = await fetch(`${API_BASE}/api/loja/usuario/${userId}`);
                 const d = await r.json();
                 if (d.ok) {
-                    userBalance = parseFloat(d.user.balance_web || 0);
-                    ageVerified = !!d.user.age_verified;
-                    userName = d.user.username ? '@' + d.user.username : (d.user.first_name || userName);
+                    userBalance  = parseFloat(d.user.balance_web || 0);
+                    ageVerified  = !!d.user.age_verified;
+                    // Usa o username do banco se tiver
+                    if (d.user.username) {
+                        userName = '@' + d.user.username;
+                    } else if (d.user.first_name) {
+                        userName = d.user.first_name;
+                    }
                 }
             } catch(e) { console.error('Erro initUser:', e); }
 
@@ -2329,7 +2340,7 @@
 
             try {
                 const purchaseId = 'PURCHASE_' + Date.now();
-                currentPurchaseIdLocal = purchaseId;   // ← ADICIONADO
+                currentPurchaseIdLocal = purchaseId;
                 const resp = await fetch(`${API_BASE}/api/loja/pix`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
@@ -2383,7 +2394,7 @@
 
                         setTimeout(() => {
                             if (isPurchasePix) {
-                                currentOrderId = currentPurchaseIdLocal;   // ← ADICIONADO
+                                currentOrderId = currentPurchaseIdLocal;
                                 cart = [];
                                 updateCartBadge();
                                 closeBalanceModal();
