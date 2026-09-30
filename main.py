@@ -65,7 +65,7 @@ logger = logging.getLogger("larizinha-bot")
 # ═══════════════════════════════════════════════
 flask_app = Flask(__name__)
 loop: asyncio.AbstractEventLoop | None = None
-bot_app = None  # instância do PTB Application — usada para enviar mensagens
+bot_app = None  # instância do PTB Application
 
 
 @flask_app.get("/")
@@ -349,7 +349,8 @@ def api_loja_pix():
             purchase_id=purchase_id,
         )
 
-        # Salva PIX pendente no banco
+        import json as _json
+
         async def _save():
             await db._db.execute(
                 "INSERT OR REPLACE INTO pix_pending "
@@ -357,17 +358,9 @@ def api_loja_pix():
                 "VALUES (?, ?, ?, ?, NULL, NULL, ?, 'pending')",
                 (str(pix["payment_id"]), user_id, valor, tipo, pix.get("qr_code_text")),
             )
-            # Guarda o purchase_id e itens para o webhook reconstruir depois
             await db._db.execute(
-                "CREATE TABLE IF NOT EXISTS pix_meta ("
-                "  pix_id TEXT PRIMARY KEY,"
-                "  purchase_id TEXT,"
-                "  itens_json TEXT"
-                ")"
-            )
-            import json as _json
-            await db._db.execute(
-                "INSERT OR REPLACE INTO pix_meta (pix_id, purchase_id, itens_json) VALUES (?, ?, ?)",
+                "INSERT OR REPLACE INTO pix_meta (pix_id, purchase_id, itens_json) "
+                "VALUES (?, ?, ?)",
                 (str(pix["payment_id"]), purchase_id, _json.dumps(itens)),
             )
             await db._db.commit()
@@ -414,6 +407,7 @@ def api_mp_webhook():
 async def _finalizar_pagamento_loja(payment_id):
     """Chamado quando o MP confirma o pagamento."""
     import json as _json
+    from services import channel_notify
 
     pix = await db.get_pix(str(payment_id))
     if not pix:
@@ -427,7 +421,7 @@ async def _finalizar_pagamento_loja(payment_id):
     tipo  = pix.get("tipo", "recarga")
     valor = float(pix["valor"])
 
-    # ─── RECARGA: credita balance_web
+    # ═══ RECARGA: credita balance_web + notifica canal ═══
     if tipo == "recarga":
         await db._db.execute(
             "UPDATE users SET balance_web = balance_web + ? WHERE user_id = ?",
@@ -445,9 +439,18 @@ async def _finalizar_pagamento_loja(payment_id):
             except Exception:
                 pass
 
-    # ─── COMPRA: cria purchase e manda credenciais
+        try:
+            await channel_notify.notify_topup(
+                bot_app.bot if bot_app else None,
+                user,
+                valor,
+                0.0,
+            )
+        except Exception as e:
+            logger.warning("Falha notificando canal (recarga): %s", e)
+
+    # ═══ COMPRA: cria purchase + notifica privado + canal ═══
     elif tipo == "compra":
-        # Recupera itens do pix_meta
         cur = await db._db.execute(
             "SELECT purchase_id, itens_json FROM pix_meta WHERE pix_id = ?",
             (str(payment_id),),
@@ -471,11 +474,10 @@ async def _finalizar_pagamento_loja(payment_id):
         if not product:
             return
 
-        qty = int(primeiro.get("qty", 1))
+        qty   = int(primeiro.get("qty", 1))
         items = await db.take_stock_items(product["id"], qty)
         first = items[0] if items else {"email": "N/A", "password": "N/A"}
 
-        # Cria purchase (usando ID externo se tiver)
         if purchase_id:
             purchase = await db.create_purchase_with_id(
                 purchase_id=purchase_id,
@@ -500,6 +502,11 @@ async def _finalizar_pagamento_loja(payment_id):
 
         await db.decrement_stock(product["id"], qty)
 
+        try:
+            await db.clear_cart_view(user["user_id"], product["id"])
+        except Exception:
+            pass
+
         if bot_app:
             try:
                 await bot_app.bot.send_message(
@@ -514,6 +521,16 @@ async def _finalizar_pagamento_loja(payment_id):
                 )
             except Exception:
                 pass
+
+        try:
+            await channel_notify.notify_new_access(
+                bot_app.bot if bot_app else None,
+                user,
+                product,
+                purchase,
+            )
+        except Exception as e:
+            logger.warning("Falha notificando canal (compra): %s", e)
 
 
 @flask_app.post("/api/loja/comprar-saldo")
@@ -540,6 +557,8 @@ def api_loja_comprar_saldo():
 
 
 async def _comprar_com_saldo_web(user_id, itens, total):
+    from services import channel_notify
+
     user = await db.get_user(user_id)
     if not user:
         return {"ok": False, "error": "Usuário não encontrado."}
@@ -567,12 +586,16 @@ async def _comprar_com_saldo_web(user_id, itens, total):
     )
     await db.decrement_stock(product["id"], qty)
 
-    # Debita saldo só depois de garantir que deu certo
     await db._db.execute(
         "UPDATE users SET balance_web = balance_web - ? WHERE user_id = ?",
         (total, user_id),
     )
     await db._db.commit()
+
+    try:
+        await db.clear_cart_view(user_id, product["id"])
+    except Exception:
+        pass
 
     if bot_app:
         try:
@@ -589,6 +612,16 @@ async def _comprar_com_saldo_web(user_id, itens, total):
         except Exception:
             pass
 
+    try:
+        await channel_notify.notify_new_access(
+            bot_app.bot if bot_app else None,
+            user,
+            product,
+            purchase,
+        )
+    except Exception as e:
+        logger.warning("Falha notificando canal (saldo): %s", e)
+
     novo = await db.get_user(user_id)
     return {
         "ok": True,
@@ -597,7 +630,6 @@ async def _comprar_com_saldo_web(user_id, itens, total):
     }
 
 
-# ─── Verificação +18 (IA) ───
 @flask_app.post("/api/loja/verificar-idade")
 def api_verificar_idade():
     from services import openai_service
@@ -624,7 +656,6 @@ def api_verificar_idade():
         return jsonify(ok=False, motivo="Erro ao analisar documento."), 500
 
 
-# ─── Chat IA ───
 @flask_app.post("/api/loja/chat")
 def api_loja_chat():
     from services import openai_service
@@ -655,7 +686,6 @@ def api_loja_chat():
         return jsonify(ok=False, resposta="Erro no atendimento."), 500
 
 
-# ─── Histórico de compras ───
 @flask_app.get("/api/loja/historico/<int:user_id>")
 def api_loja_historico(user_id):
     if loop is None:
@@ -670,7 +700,6 @@ def api_loja_historico(user_id):
         return jsonify(ok=False), 500
 
 
-# ─── PDF do pedido ───
 @flask_app.get("/api/loja/pedido/<purchase_id>/pdf")
 def api_loja_pedido_pdf(purchase_id):
     from services import pdf_gen
@@ -694,9 +723,6 @@ def api_loja_pedido_pdf(purchase_id):
         return str(e), 500
 
 
-# ═══════════════════════════════════════════════
-# RUN FLASK
-# ═══════════════════════════════════════════════
 def run_flask():
     flask_app.run(host="0.0.0.0", port=PORT, debug=False, use_reloader=False)
 
