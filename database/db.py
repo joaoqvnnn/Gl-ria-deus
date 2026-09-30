@@ -148,7 +148,7 @@ async def init_db():
     )
     await _db.commit()
 
-    # ─── Colunas novas em users (seguro para bases existentes)
+    # ─── Colunas novas em users
     await _try_alter("ALTER TABLE users ADD COLUMN referred_by INTEGER")
     await _try_alter("ALTER TABLE users ADD COLUMN is_affiliate INTEGER DEFAULT 0")
     await _try_alter("ALTER TABLE users ADD COLUMN payout_password TEXT")
@@ -208,7 +208,6 @@ async def set_whatsapp(user_id: int, whatsapp):
 
 
 async def set_referred_by(user_id: int, referrer_id: int):
-    """Define quem indicou o usuário (não sobrescreve se já tiver)."""
     if user_id == referrer_id:
         return
     u = await get_user(user_id)
@@ -253,7 +252,6 @@ async def set_pix_key(user_id, key_type, pix_key, name=None, bank=None):
 
 
 async def user_stats(user_id: int) -> dict:
-    """Estatísticas consolidadas para o perfil."""
     cur = await _db.execute(
         "SELECT COUNT(*) AS c, COALESCE(SUM(total), 0) AS s FROM purchases WHERE user_id = ?",
         (user_id,),
@@ -396,10 +394,6 @@ async def create_purchase(user_id, product_id, product_name, quantity, total, em
 
 async def create_purchase_with_id(purchase_id, user_id, product_id, product_name,
                                   quantity, total, email, password, days=30):
-    """
-    Como create_purchase, mas usando um ID externo (ex: PURCHASE_1712345678).
-    Usado quando o pagamento vem do Mercado Pago / Web App.
-    """
     expires = (datetime.now() + timedelta(days=days)).strftime("%Y-%m-%d %H:%M:%S")
     await _db.execute(
         "INSERT INTO purchases (id, user_id, product_id, product_name, quantity, total, email, password, expires_at) "
@@ -566,11 +560,16 @@ async def mark_withdrawal_processed(wid: str):
 # TOP COMPRADORES
 # ═══════════════════════════════════════════════
 async def top_buyers(limit: int = 10):
+    """
+    Top produtos mais vendidos (nome do produto + qtd de pedidos).
+    """
     cur = await _db.execute(
-        "SELECT u.user_id, u.first_name, u.username, "
-        "COALESCE(SUM(p.total), 0) AS total "
-        "FROM users u LEFT JOIN purchases p ON p.user_id = u.user_id "
-        "GROUP BY u.user_id ORDER BY total DESC LIMIT ?",
+        "SELECT product_name AS first_name, "
+        "       COALESCE(SUM(quantity), 0) AS pedidos, "
+        "       COALESCE(SUM(total), 0) AS total "
+        "FROM purchases "
+        "GROUP BY product_name "
+        "ORDER BY pedidos DESC LIMIT ?",
         (limit,),
     )
     return [dict(r) for r in await cur.fetchall()]
@@ -623,11 +622,6 @@ async def save_cart_view(user_id: int, product_id: int):
 
 
 async def clear_cart_view(user_id: int, product_id: int | None = None):
-    """
-    Remove o carrinho abandonado.
-    - Se product_id for passado → limpa só aquele produto.
-    - Se product_id=None → limpa TODOS os produtos do usuário.
-    """
     if product_id is None:
         await _db.execute(
             "DELETE FROM cart_views WHERE user_id = ?",
