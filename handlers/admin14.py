@@ -1,5 +1,5 @@
 """
-Módulo ADMIN — CARRINHOS ABANDONADOS (v2 — completo).
+Módulo ADMIN — CARRINHOS ABANDONADOS v2 (completo).
 """
 import io
 import logging
@@ -34,7 +34,10 @@ async def _edit_or_send(query, text: str, kb=None):
     try:
         await query.edit_message_text(text, reply_markup=kb, parse_mode=ParseMode.HTML)
     except Exception:
-        await query.message.reply_text(text, reply_markup=kb, parse_mode=ParseMode.HTML)
+        try:
+            await query.message.reply_text(text, reply_markup=kb, parse_mode=ParseMode.HTML)
+        except Exception:
+            pass
 
 
 async def _delete_prompt(context, id_key, chat_key):
@@ -156,7 +159,6 @@ async def admin_cart_v2_item_cb(update: Update, context: ContextTypes.DEFAULT_TY
     nome = u.get("first_name") or u.get("username") or f"ID {user_id}"
     preco = float(p["price"])
 
-    # Pega dados do cart_view
     cur = await db._db.execute(
         "SELECT viewed_at, reminders_sent FROM cart_views "
         "WHERE user_id = ? AND product_id = ?",
@@ -166,7 +168,6 @@ async def admin_cart_v2_item_cb(update: Update, context: ContextTypes.DEFAULT_TY
     viewed_at = str(cv["viewed_at"])[:16] if cv else "—"
     reminders = (cv["reminders_sent"] if cv else 0) or 0
 
-    # Calcula tempo desde a visualização
     tempo_txt = "—"
     if cv:
         try:
@@ -235,7 +236,6 @@ async def admin_cart_v2_send_cb(update: Update, context: ContextTypes.DEFAULT_TY
 
 
 async def _send_reminder(bot, user_id: int, product_id: int) -> bool:
-    """Envia lembrete padrão do carrinho."""
     try:
         u = await db.get_user(user_id)
         p = await db.get_product(product_id)
@@ -342,7 +342,6 @@ async def admin_cart_v2_msg_handler(update: Update, context: ContextTypes.DEFAUL
     prod_nome = (p or {}).get("name") or "?"
     preco = float((p or {}).get("price") or 0)
 
-    # Substitui variáveis
     msg_final = (
         texto
         .replace("{nome}", nome)
@@ -378,7 +377,7 @@ async def admin_cart_v2_msg_handler(update: Update, context: ContextTypes.DEFAUL
 
 
 # ═══════════════════════════════════════════════
-# DAR DESCONTO (cria gift cupom)
+# DAR DESCONTO
 # ═══════════════════════════════════════════════
 async def admin_cart_v2_disc_cb(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -447,7 +446,6 @@ async def admin_cart_v2_disc_set_cb(update: Update, context: ContextTypes.DEFAUL
     valor_desc = preco * (pct / 100)
     preco_final = preco - valor_desc
 
-    # Cria gift de saldo específico para o desconto
     try:
         codigos = await db.admin_gift_create_full(
             code_base="CART",
@@ -463,7 +461,6 @@ async def admin_cart_v2_disc_set_cb(update: Update, context: ContextTypes.DEFAUL
         logger.exception("Erro criando gift cupom: %s", e)
         codigo = "ERRO"
 
-    # Envia mensagem com o cupom
     u = await db.get_user(user_id)
     nome = (u or {}).get("first_name") or "cliente"
 
@@ -499,7 +496,7 @@ async def admin_cart_v2_disc_set_cb(update: Update, context: ContextTypes.DEFAUL
 
 
 # ═══════════════════════════════════════════════
-# MARCAR CONVERTIDO
+# MARCAR CONVERTIDO / REMOVER
 # ═══════════════════════════════════════════════
 async def admin_cart_v2_conv_cb(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -524,9 +521,6 @@ async def admin_cart_v2_conv_cb(update: Update, context: ContextTypes.DEFAULT_TY
     await admin_carts_v2_cb(update, context)
 
 
-# ═══════════════════════════════════════════════
-# REMOVER
-# ═══════════════════════════════════════════════
 async def admin_cart_v2_del_cb(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -565,7 +559,7 @@ async def admin_carts_v2_send_all_cb(update: Update, context: ContextTypes.DEFAU
         "📨 <b>Enviar lembrete pra todos?</b>\n"
         "━━━━━━━━━━━━━━━━━━━━━━━\n\n"
         f"👥 Total de carrinhos: <b>{total}</b>\n\n"
-        "⚠️ Serão enviadas <b>{total}</b> mensagens. Continuar?"
+        f"⚠️ Serão enviadas <b>{total}</b> mensagens. Continuar?"
     )
 
     kb = menus.InlineKeyboardMarkup([
@@ -588,7 +582,7 @@ async def admin_carts_v2_send_all_yes_cb(update: Update, context: ContextTypes.D
         await query.answer("📭 Nenhum carrinho pra enviar.", show_alert=True)
         return
 
-    # Mensagem de progresso
+    prog = None
     try:
         prog = await context.bot.send_message(
             chat_id=query.message.chat_id,
@@ -596,7 +590,7 @@ async def admin_carts_v2_send_all_yes_cb(update: Update, context: ContextTypes.D
             parse_mode=ParseMode.HTML,
         )
     except Exception:
-        prog = None
+        pass
 
     enviados = 0
     falhas = 0
@@ -612,7 +606,6 @@ async def admin_carts_v2_send_all_yes_cb(update: Update, context: ContextTypes.D
         except Exception:
             falhas += 1
 
-        # Atualiza a cada 20
         if prog and (i + 1) % 20 == 0:
             try:
                 await context.bot.edit_message_text(
@@ -631,7 +624,6 @@ async def admin_carts_v2_send_all_yes_cb(update: Update, context: ContextTypes.D
         f"enviados={enviados} falhas={falhas}",
     )
 
-    # Substitui mensagem de progresso
     if prog:
         try:
             await context.bot.edit_message_text(
@@ -836,10 +828,9 @@ async def admin_carts_v2_template_handler(update: Update, context: ContextTypes.
 
 
 # ═══════════════════════════════════════════════
-# JOB — RODA NO BOT (substitui a antiga)
+# JOB — RODA NO BOT
 # ═══════════════════════════════════════════════
 async def check_abandoned_carts_v2(context: ContextTypes.DEFAULT_TYPE):
-    """Job que roda a cada 60s verificando carrinhos abandonados."""
     try:
         ligado = (await db.get_config("cart_auto", "1")) == "1"
         if not ligado:
