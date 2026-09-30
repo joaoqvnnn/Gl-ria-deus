@@ -38,7 +38,7 @@ async def affiliates_open(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         await query.edit_message_text(
             messages.affiliates_active_text(u, stats, _link(user.id)),
-            reply_markup=menus.affiliates_active_keyboard(),
+            reply_markup=menus.affiliates_active_keyboard(user_id=user.id),
             parse_mode=ParseMode.HTML,
         )
     except Exception as e:
@@ -67,7 +67,7 @@ async def affiliates_join(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         await query.edit_message_text(
             messages.affiliates_active_text(u, stats, _link(user.id)),
-            reply_markup=menus.affiliates_active_keyboard(),
+            reply_markup=menus.affiliates_active_keyboard(user_id=user.id),
             parse_mode=ParseMode.HTML,
         )
     except Exception as e:
