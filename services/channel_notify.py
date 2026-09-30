@@ -16,7 +16,11 @@ from config import NOTIF_CHANNEL_ID, STOCK_CHANNEL_ID, BOT_USERNAME
 logger = logging.getLogger(__name__)
 
 
+# ═══════════════════════════════════════════════
+# KEYBOARDS
+# ═══════════════════════════════════════════════
 def _kb_ver_produto(product_id: int) -> InlineKeyboardMarkup:
+    """Botão que leva direto pra tela do produto."""
     return InlineKeyboardMarkup([[
         InlineKeyboardButton(
             "🛒 Ver Produto",
@@ -26,6 +30,7 @@ def _kb_ver_produto(product_id: int) -> InlineKeyboardMarkup:
 
 
 def _kb_novo_acesso(user_id: int, purchase_id: str) -> InlineKeyboardMarkup:
+    """Botões da notificação 'NOVO ACESSO LIBERADO'."""
     return InlineKeyboardMarkup([
         [InlineKeyboardButton(
             "🚀 Ir para o Bot",
@@ -38,6 +43,9 @@ def _kb_novo_acesso(user_id: int, purchase_id: str) -> InlineKeyboardMarkup:
     ])
 
 
+# ═══════════════════════════════════════════════
+# NOTIFICAÇÕES
+# ═══════════════════════════════════════════════
 async def notify_new_access(
     bot: Bot,
     user: dict,
@@ -48,7 +56,7 @@ async def notify_new_access(
     Envia "NOVO ACESSO LIBERADO" para o canal de compras.
     Chamado quando o usuário paga (compra ou recarga).
     """
-    if not NOTIF_CHANNEL_ID:
+    if not NOTIF_CHANNEL_ID or bot is None:
         return
 
     data_str = datetime.now().strftime("%d/%m/%Y, %H:%M")
@@ -84,7 +92,7 @@ async def notify_product_stock(
     Envia "PRODUTO ABASTECIDO" para o canal de estoque.
     Chamado quando o admin abastece.
     """
-    if not STOCK_CHANNEL_ID:
+    if not STOCK_CHANNEL_ID or bot is None:
         return
 
     texto = (
@@ -107,8 +115,8 @@ async def notify_product_stock(
 
 
 async def notify_topup(bot: Bot, user: dict, valor: float, bonus: float):
-    """Notifica recarga no canal (opcional)."""
-    if not NOTIF_CHANNEL_ID:
+    """Notifica recarga no canal de compras."""
+    if not NOTIF_CHANNEL_ID or bot is None:
         return
 
     data_str = datetime.now().strftime("%d/%m/%Y, %H:%M")
