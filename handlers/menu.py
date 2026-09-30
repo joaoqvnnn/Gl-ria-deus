@@ -14,9 +14,6 @@ from texts import messages
 from handlers import profile as profile_handler
 
 
-# ═══════════════════════════════════════════════
-# MENU PRINCIPAL — roteador de callbacks
-# ═══════════════════════════════════════════════
 async def menu_router(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     data = query.data
@@ -50,14 +47,27 @@ async def menu_router(update: Update, context: ContextTypes.DEFAULT_TYPE):
         from handlers import topup as topup_handler
         await topup_handler.topup_open(update, context)
 
+    # ─── Afiliados
+    elif data == "menu:affiliates":
+        from handlers import affiliates as aff_handler
+        await aff_handler.affiliates_open(update, context)
+
+    # ─── Top Compradores
+    elif data == "menu:top":
+        from handlers import top as top_handler
+        await top_handler.top_open(update, context)
+
+    # ─── Pesquisar Serviços
+    elif data == "menu:search":
+        from handlers import search as search_handler
+        await search_handler.search_open(update, context)
+
     # ─── Abrir Loja (Web App dentro do Telegram)
     elif data == "menu:store":
         url = f"{MINIAPP_BASE_URL}/loja/{user.id}"
-
         kb = InlineKeyboardMarkup([[
             InlineKeyboardButton("🛒 Abrir Loja", web_app=WebAppInfo(url=url))
         ]])
-
         await query.edit_message_text(
             "🛒 <b>Clique abaixo para abrir a loja:</b>\n\n"
             "Você será redirecionado para uma experiência completa dentro do Telegram.",
@@ -73,7 +83,7 @@ async def menu_router(update: Update, context: ContextTypes.DEFAULT_TYPE):
             parse_mode=ParseMode.HTML,
         )
 
-    # ─── Módulos em breve
+    # ─── Módulos "em breve"
     elif data.startswith("soon:"):
         area = data.split(":", 1)[1]
         nomes = {
