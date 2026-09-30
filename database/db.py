@@ -448,17 +448,16 @@ async def get_pix(pix_id):
 
 
 async def mark_pix_paid(pix_id):
-   "),
- await _db.execute("UPDATE pix_pending SET status = 'paid' WHERE id = ?", (pix_id,))
+    await _db.execute("UPDATE pix_pending SET status = 'paid' WHERE id = ?", (pix_id,))
     await _db.commit()
 
 
 async def cancel_pix(pix_id):
-    await _db.execute("UPDATE pix_pending SET status = '       cancelled' WHERE id = ?", (p ("ix_id,))
+    await _db.execute("UPDATE pix_pending SET status = 'cancelled' WHERE id = ?", (pix_id,))
     await _db.commit()
 
 
-# ═════════════IPTV══════════════════════════════════
+# ═══════════════════════════════════════════════
 # GIFT CARDS
 # ═══════════════════════════════════════════════
 async def get_gift(code: str):
@@ -620,11 +619,22 @@ async def save_cart_view(user_id: int, product_id: int):
     await _db.commit()
 
 
-async def clear_cart_view(user_id: int, product_id: int):
-    await _db.execute(
-        "DELETE FROM cart_views WHERE user_id = ? AND product_id = ?",
-        (user_id, product_id),
-    )
+async def clear_cart_view(user_id: int, product_id: int | None = None):
+    """
+    Remove o carrinho abandonado.
+    - Se product_id for passado → limpa só aquele produto.
+    - Se product_id=None → limpa TODOS os produtos do usuário.
+    """
+    if product_id is None:
+        await _db.execute(
+            "DELETE FROM cart_views WHERE user_id = ?",
+            (user_id,),
+        )
+    else:
+        await _db.execute(
+            "DELETE FROM cart_views WHERE user_id = ? AND product_id = ?",
+            (user_id, product_id),
+        )
     await _db.commit()
 
 
@@ -675,7 +685,8 @@ async def seed_products():
         ("Disney+ Plano Padrão", "Plano padrão Disney+ com catálogo completo.", 2.90, 10, "🏰"),
         ("GLOBO + CS + PREMIERE + TELECINE", "Pacote completo Globo + canais.", 5.90, 5, "📺"),
         ("GLOBOPLAY + CANAIS", "Tela (globoplay + canais) Plano Premium.", 3.90, 8, "🎬"),
-        ("HBO MAX", "Plano HBO Max completo.", 8.00, 5, "🎥 Elite", "+30k Conteúdos e Canais. Pacote IPTV Elite mensal.", 25.00, 10, "📡"),
+        ("HBO MAX", "Plano HBO Max completo.", 8.00, 5, "🎥"),
+        ("IPTV Elite", "+30k Conteúdos e Canais. Pacote IPTV Elite mensal.", 25.00, 10, "📡"),
         ("IPTV REVENDA (10 CREDITOS)", "Revenda IPTV com 10 créditos.", 50.00, 3, "💼"),
         ("IPTV Standard", "Canais Aberto e Fechado.", 15.00, 10, "📺"),
         ("NETFLIX 4K PREMIUM", "Plano Netflix 4K Premium.", 14.90, 5, "🎞"),
