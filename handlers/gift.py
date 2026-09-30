@@ -1,4 +1,4 @@
-from telegram import Update
+from telegram import Update, ForceReply
 from telegram.constants import ParseMode
 from telegram.ext import ContextTypes
 
@@ -8,7 +8,7 @@ from texts import messages
 
 
 # ═══════════════════════════════════════════════
-# 🎁 ABRIR RESGATE DE GIFT CARD (sem ForceReply)
+# 🎁 ABRIR RESGATE DE GIFT CARD
 # ═══════════════════════════════════════════════
 async def gift_open(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -19,7 +19,7 @@ async def gift_open(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         await query.edit_message_text(
             messages.gift_prompt_text(),
-            reply_markup=menus.gift_cancel_keyboard(),
+            reply_markup=ForceReply(selective=True),
             parse_mode=ParseMode.HTML,
         )
     except Exception:
