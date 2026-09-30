@@ -1,5 +1,5 @@
 """
-Módulo ADMIN — GIFT CARDS (v2 — completo).
+Módulo ADMIN — GIFT CARDS v2 (completo).
 """
 import io
 import logging
@@ -25,7 +25,10 @@ async def _edit_or_send(query, text: str, kb=None):
     try:
         await query.edit_message_text(text, reply_markup=kb, parse_mode=ParseMode.HTML)
     except Exception:
-        await query.message.reply_text(text, reply_markup=kb, parse_mode=ParseMode.HTML)
+        try:
+            await query.message.reply_text(text, reply_markup=kb, parse_mode=ParseMode.HTML)
+        except Exception:
+            pass
 
 
 async def _delete_prompt(context, id_key, chat_key):
@@ -413,7 +416,6 @@ async def admin_gift_new_cb(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     tipo = query.data.split(":")[2]
 
-    # Reset do wizard
     context.user_data["gift_wizard"] = {"tipo": tipo, "step": "valor"}
     context.user_data["_gift_prompt_id"] = query.message.message_id
     context.user_data["_gift_prompt_chat"] = query.message.chat_id
@@ -614,7 +616,6 @@ async def admin_gift_wizard_handler(update: Update, context: ContextTypes.DEFAUL
         wiz["quantidade"] = qtd
         context.user_data.pop("gift_wizard", None)
 
-        # Monta preview
         tipo_txt = {
             "saldo": "💰 Saldo",
             "produto": f"🎁 Produto: {wiz.get('produto_nome', '?')}",
@@ -702,7 +703,6 @@ async def admin_gift_confirm_create_cb(update: Update, context: ContextTypes.DEF
     except Exception:
         await query.message.reply_text(texto, reply_markup=menus.admin_back_kb(), parse_mode=ParseMode.HTML)
 
-    # Envia também o TXT com todos
     try:
         txt = "\n".join(codigos)
         await context.bot.send_document(
