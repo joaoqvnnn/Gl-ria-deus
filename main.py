@@ -11,6 +11,7 @@ from email.utils import formataddr
 
 from flask import Flask, request, jsonify, render_template, send_file
 from telegram import Update, InlineKeyboardMarkup, InlineKeyboardButton
+from telegram.constants import ParseMode
 from telegram.ext import (
     ApplicationBuilder,
     CallbackQueryHandler,
@@ -18,6 +19,7 @@ from telegram.ext import (
     CommandHandler,
     InlineQueryHandler,
     MessageHandler,
+    TypeHandler,
     filters,
 )
 
@@ -29,28 +31,14 @@ from config import (
     ADMIN_IDS,
 )
 from database import db
+from texts import cache
 from handlers import (
-    start,
-    menu,
-    catalog,
-    buy,
-    multi,
-    delivery,
-    profile,
-    history,
-    gift,
-    alterdata,
-    topup,
-    affiliates,
-    withdraw,
-    withdraw_history,
-    top,
-    search,
-    direct,
-    abandoned,
-    notif,
-    admin_stock,
-    inline,
+    start, menu, catalog, buy, multi, delivery,
+    profile, history, gift, alterdata, topup,
+    affiliates, withdraw, withdraw_history, top,
+    search, direct, abandoned, notif, admin_stock, inline,
+    admin as admin1,
+    admin2, admin3, admin4, admin5, admin6,
 )
 
 logging.basicConfig(
@@ -65,7 +53,7 @@ logger = logging.getLogger("larizinha-bot")
 # ═══════════════════════════════════════════════
 flask_app = Flask(__name__)
 loop: asyncio.AbstractEventLoop | None = None
-bot_app = None  # instância do PTB Application
+bot_app = None
 
 
 @flask_app.get("/")
@@ -205,50 +193,30 @@ def api_enviar_codigo():
     html = f"""
     <!DOCTYPE html>
     <html lang="pt-BR">
-    <head>
-      <meta charset="UTF-8">
-      <meta name="viewport" content="width=device-width, initial-scale=1.0">
-      <title>{titulo}</title>
-    </head>
-    <body style="margin:0; padding:0; background-color:#f4f4f5; font-family:-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;">
-      <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="background-color:#f4f4f5; padding:40px 16px;">
-        <tr>
-          <td align="center">
-            <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="max-width:560px;">
-              <tr>
-                <td>
-                  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="background-color:#ffffff; border:1px solid #e5e7eb; border-radius:12px; overflow:hidden;">
-                    <tr>
-                      <td style="padding:48px 40px;">
-                        <h1 style="margin:0 0 16px; font-size:24px; font-weight:700; color:#111827;">{titulo}</h1>
-                        <p style="margin:0 0 24px; font-size:15px; line-height:1.6; color:#4b5563;">{subtitulo}</p>
-                        <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0">
-                          <tr>
-                            <td align="center">
-                              <div style="display:inline-block; padding:20px 40px; background-color:#f9fafb; border:1px solid #e5e7eb; border-radius:8px;">
-                                <span style="font-size:36px; font-weight:800; letter-spacing:12px; color:#111827; font-family:monospace;">{codigo}</span>
-                              </div>
-                            </td>
-                          </tr>
-                        </table>
-                        <p style="margin:32px 0 0; font-size:14px; line-height:1.6; color:#6b7280;">
-                          Este código expira em 5 minutos. Se você não solicitou, ignore este e-mail.
-                        </p>
-                      </td>
-                    </tr>
-                  </table>
-                </td>
-              </tr>
-              <tr>
-                <td style="padding-top:32px; text-align:center;">
-                  <p style="margin:0; font-size:12px; color:#6b7280;">
-                    <strong style="color:#374151;">{nome_loja}</strong>
-                  </p>
-                </td>
-              </tr>
-            </table>
-          </td>
-        </tr>
+    <head><meta charset="UTF-8"><title>{titulo}</title></head>
+    <body style="margin:0;padding:0;background:#f4f4f5;font-family:Arial,sans-serif;">
+      <table width="100%" cellspacing="0" cellpadding="0" style="background:#f4f4f5;padding:40px 16px;">
+        <tr><td align="center">
+          <table width="100%" style="max-width:560px;">
+            <tr><td>
+              <table width="100%" style="background:#fff;border:1px solid #e5e7eb;border-radius:12px;">
+                <tr><td style="padding:48px 40px;">
+                  <h1 style="font-size:24px;color:#111827;">{titulo}</h1>
+                  <p style="color:#4b5563;font-size:15px;line-height:1.6;">{subtitulo}</p>
+                  <div style="text-align:center;margin:24px 0;">
+                    <div style="display:inline-block;padding:20px 40px;background:#f9fafb;border:1px solid #e5e7eb;border-radius:8px;">
+                      <span style="font-size:36px;font-weight:800;letter-spacing:12px;color:#111827;font-family:monospace;">{codigo}</span>
+                    </div>
+                  </div>
+                  <p style="color:#6b7280;font-size:14px;">Este código expira em 5 minutos. Se não foi você, ignore este e-mail.</p>
+                </td></tr>
+              </table>
+            </td></tr>
+            <tr><td style="text-align:center;padding-top:32px;">
+              <p style="color:#6b7280;font-size:12px;"><strong>{nome_loja}</strong></p>
+            </td></tr>
+          </table>
+        </td></tr>
       </table>
     </body>
     </html>
@@ -265,19 +233,15 @@ def api_enviar_codigo():
             server.login(gmail_user, gmail_pass)
             server.sendmail(gmail_user, [email], msg.as_string())
 
-        logger.info("Código enviado para %s (tipo=%s)", email, tipo)
         return jsonify(ok=True, message="E-mail enviado com sucesso")
 
-    except smtplib.SMTPAuthenticationError:
-        logger.exception("Falha de autenticação SMTP")
-        return jsonify(ok=False, error="Falha na autenticação do servidor de e-mail."), 500
     except Exception as e:
         logger.exception("Erro enviando e-mail: %s", e)
         return jsonify(ok=False, error="Falha ao enviar e-mail."), 500
 
 
 # ═══════════════════════════════════════════════
-# LOJA VIRTUAL — páginas e APIs
+# LOJA VIRTUAL
 # ═══════════════════════════════════════════════
 @flask_app.get("/loja/<int:user_id>")
 def loja_page(user_id: int):
@@ -379,7 +343,6 @@ def api_mp_status(payment_id):
         p = mercadopago.consultar_pagamento(payment_id)
         return jsonify(ok=True, status=p.get("status"))
     except Exception as e:
-        logger.exception(e)
         return jsonify(ok=False, error=str(e)), 500
 
 
@@ -404,13 +367,11 @@ def api_mp_webhook():
 
 
 async def _finalizar_pagamento_loja(payment_id):
-    """Chamado quando o MP confirma o pagamento."""
     import json as _json
     from services import channel_notify
 
     pix = await db.get_pix(str(payment_id))
     if not pix:
-        logger.warning("PIX não encontrado: %s", payment_id)
         return
 
     user = await db.get_user(pix["user_id"])
@@ -431,7 +392,7 @@ async def _finalizar_pagamento_loja(payment_id):
             try:
                 await bot_app.bot.send_message(
                     chat_id=user["user_id"],
-                    text=f"✅ <b>Recarga no Web App confirmada!</b>\n\n💰 Valor: R$ {valor:.2f}",
+                    text=f"✅ <b>Recarga confirmada!</b>\n\n💰 Valor: R$ {valor:.2f}",
                     parse_mode="HTML",
                 )
             except Exception:
@@ -441,8 +402,8 @@ async def _finalizar_pagamento_loja(payment_id):
             await channel_notify.notify_topup(
                 bot_app.bot if bot_app else None, user, valor, 0.0,
             )
-        except Exception as e:
-            logger.warning("Falha notificando canal (recarga): %s", e)
+        except Exception:
+            pass
 
     elif tipo == "compra":
         cur = await db._db.execute(
@@ -460,7 +421,6 @@ async def _finalizar_pagamento_loja(payment_id):
                 itens = []
 
         if not itens:
-            logger.warning("Compra sem itens: %s", payment_id)
             return
 
         primeiro = itens[0]
@@ -505,12 +465,7 @@ async def _finalizar_pagamento_loja(payment_id):
             try:
                 await bot_app.bot.send_message(
                     chat_id=user["user_id"],
-                    text=(
-                        f"✅ <b>Compra realizada no Web App!</b>\n\n"
-                        f"⚜️ Serviço: <b>{product['name']}</b>\n"
-                        f"💰 Total: <b>R$ {valor:.2f}</b>\n"
-                        f"🎫 ID: <code>{purchase['id']}</code>"
-                    ),
+                    text=f"✅ <b>Compra realizada!</b>\n\n⚜️ {product['name']}\n💰 R$ {valor:.2f}",
                     parse_mode="HTML",
                 )
             except Exception:
@@ -520,8 +475,8 @@ async def _finalizar_pagamento_loja(payment_id):
             await channel_notify.notify_new_access(
                 bot_app.bot if bot_app else None, user, product, purchase,
             )
-        except Exception as e:
-            logger.warning("Falha notificando canal (compra): %s", e)
+        except Exception:
+            pass
 
 
 @flask_app.post("/api/loja/comprar-saldo")
@@ -553,7 +508,6 @@ async def _comprar_com_saldo_web(user_id, itens, total):
     user = await db.get_user(user_id)
     if not user:
         return {"ok": False, "error": "Usuário não encontrado."}
-
     if float(user.get("balance_web") or 0) < total:
         return {"ok": False, "error": "Saldo insuficiente."}
 
@@ -576,7 +530,6 @@ async def _comprar_com_saldo_web(user_id, itens, total):
         password=first["password"],
     )
     await db.decrement_stock(product["id"], qty)
-
     await db._db.execute(
         "UPDATE users SET balance_web = balance_web - ? WHERE user_id = ?",
         (total, user_id),
@@ -592,12 +545,7 @@ async def _comprar_com_saldo_web(user_id, itens, total):
         try:
             await bot_app.bot.send_message(
                 chat_id=user_id,
-                text=(
-                    f"✅ <b>Compra realizada no Web App!</b>\n\n"
-                    f"⚜️ Serviço: <b>{product['name']}</b>\n"
-                    f"💰 Total: <b>R$ {total:.2f}</b>\n"
-                    f"🎫 ID: <code>{purchase['id']}</code>"
-                ),
+                text=f"✅ <b>Compra realizada no Web App!</b>\n\n⚜️ {product['name']}",
                 parse_mode="HTML",
             )
         except Exception:
@@ -607,8 +555,8 @@ async def _comprar_com_saldo_web(user_id, itens, total):
         await channel_notify.notify_new_access(
             bot_app.bot if bot_app else None, user, product, purchase,
         )
-    except Exception as e:
-        logger.warning("Falha notificando canal (saldo): %s", e)
+    except Exception:
+        pass
 
     novo = await db.get_user(user_id)
     return {
@@ -648,8 +596,7 @@ def api_verificar_idade():
 def api_loja_chat():
     from services import openai_service
     data = request.get_json(silent=True) or {}
-    user_id = int(data.get("user_id", 0))
-    msg     = str(data.get("message", "")).strip()
+    msg = str(data.get("message", "")).strip()
 
     if not msg:
         return jsonify(ok=False), 400
@@ -660,7 +607,7 @@ def api_loja_chat():
             produtos = asyncio.run_coroutine_threadsafe(
                 db.get_products(), loop
             ).result(timeout=5)
-            contexto = "Produtos disponíveis:\n" + "\n".join(
+            contexto = "Produtos:\n" + "\n".join(
                 f"- {p['name']} — R$ {p['price']}" for p in produtos[:15]
             )
         except Exception:
@@ -716,7 +663,53 @@ def run_flask():
 
 
 # ═══════════════════════════════════════════════
-# POST INIT (PTB)
+# MIDDLEWARE — MANUTENÇÃO + BAN
+# ═══════════════════════════════════════════════
+async def _middleware(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """
+    Roda antes de TODOS os handlers.
+      - Bloqueia usuário banido
+      - Bloqueia tudo se manutenção ligada (exceto admins/subadmins)
+    """
+    user = update.effective_user
+    if not user:
+        return
+
+    # Admins e subadmins ignoram os bloqueios
+    ok_admin, _ = await db.admin_is_admin_or_sub(user.id)
+    if ok_admin:
+        return
+
+    # ─── Banido
+    try:
+        if await db.is_banned(user.id):
+            msg = "🚫 <b>Você está banido deste bot.</b>"
+            if update.callback_query:
+                await update.callback_query.answer("🚫 Você está banido.", show_alert=True)
+            elif update.message:
+                await update.message.reply_text(msg, parse_mode=ParseMode.HTML)
+            return
+    except Exception:
+        pass
+
+    # ─── Manutenção
+    try:
+        if await db.get_maintenance():
+            msg = (
+                "🚧 <b>Bot em manutenção</b>\n\n"
+                "Estamos fazendo melhorias. Volte em alguns minutos!"
+            )
+            if update.callback_query:
+                await update.callback_query.answer("🚧 Bot em manutenção.", show_alert=True)
+            elif update.message:
+                await update.message.reply_text(msg, parse_mode=ParseMode.HTML)
+            return
+    except Exception:
+        pass
+
+
+# ═══════════════════════════════════════════════
+# POST INIT
 # ═══════════════════════════════════════════════
 async def post_init(app):
     global loop
@@ -724,7 +717,8 @@ async def post_init(app):
 
     await db.init_db()
     await db.seed_products()
-    logger.info("Banco iniciado e produtos populados.")
+    await cache.load_all()
+    logger.info("Banco iniciado, produtos populados e cache carregado.")
 
     if app.job_queue:
         app.job_queue.run_repeating(
@@ -737,7 +731,7 @@ async def post_init(app):
 
 
 # ═══════════════════════════════════════════════
-# COMANDOS ADMIN
+# COMANDOS ADMIN / UTIL
 # ═══════════════════════════════════════════════
 async def mark_paid(update: Update, context):
     if update.effective_user.id not in ADMIN_IDS:
@@ -745,9 +739,8 @@ async def mark_paid(update: Update, context):
     if not context.args:
         await update.message.reply_text("Uso: /pago <pix_id>")
         return
-    pix_id = context.args[0]
-    await db.mark_pix_paid(pix_id)
-    await update.message.reply_text(f"✅ PIX {pix_id} marcado como pago.")
+    await db.mark_pix_paid(context.args[0])
+    await update.message.reply_text(f"✅ PIX {context.args[0]} marcado como pago.")
 
 
 async def cancelar(update: Update, context):
@@ -755,14 +748,19 @@ async def cancelar(update: Update, context):
         "awaiting_multi", "awaiting_gift", "awaiting_whatsapp",
         "awaiting_topup_value", "awaiting_wd_key", "awaiting_wd_amount",
         "awaiting_wd_pin", "awaiting_search",
+        "admin_await_search", "admin_balance", "admin_edit_price",
+        "admin_edit_stock", "admin_bc", "admin_purchase_search",
+        "admin_gift_tipo", "admin_gift_valor", "admin_gift_produto",
+        "admin_cfg_edit", "admin_text_edit", "admin_btn_edit",
+        "admin_banner_new", "admin_prod_edit", "admin_stock_add",
+        "admin_new_prod", "admin_msg_user", "admin_sub_add",
     ):
         context.user_data.pop(k, None)
     await update.message.reply_text("❌ Operação cancelada.")
 
 
 async def setpin_command(update: Update, context):
-    user_id = update.effective_user.id
-    url = f"{MINIAPP_BASE_URL}/miniapp/senha/{user_id}"
+    url = f"{MINIAPP_BASE_URL}/miniapp/senha/{update.effective_user.id}"
     kb = InlineKeyboardMarkup([[
         InlineKeyboardButton("🔐 Abrir Cadastro de Senha", web_app={"url": url})
     ]])
@@ -786,6 +784,41 @@ async def myid_command(update: Update, context):
 async def _text_router(update: Update, context):
     ud = context.user_data
 
+    # ─── ADMIN
+    if ud.get("admin_await_search"):
+        return await admin1.admin_search_handler(update, context)
+    if ud.get("admin_balance"):
+        return await admin1.admin_balance_handler(update, context)
+    if ud.get("admin_edit_price"):
+        return await admin1.admin_edit_price_handler(update, context)
+    if ud.get("admin_edit_stock"):
+        return await admin1.admin_edit_stock_handler(update, context)
+    if ud.get("admin_bc"):
+        return await admin5.admin_bc_media_handler(update, context)
+    if ud.get("admin_purchase_search"):
+        return await admin2.admin_purchase_search_handler(update, context)
+    if ud.get("admin_gift_tipo"):
+        return await admin2.admin_gift_valor_handler(update, context)
+    if ud.get("admin_gift_valor") is not None or ud.get("admin_gift_produto") is not None:
+        return await admin2.admin_gift_qtd_handler(update, context)
+    if ud.get("admin_cfg_edit"):
+        return await admin3.admin_cfg_edit_handler(update, context)
+    if ud.get("admin_text_edit"):
+        return await admin3.admin_text_edit_handler(update, context)
+    if ud.get("admin_btn_edit"):
+        return await admin3.admin_btn_edit_handler(update, context)
+    if ud.get("admin_prod_edit"):
+        return await admin4.admin_prod_edit_handler(update, context)
+    if ud.get("admin_stock_add"):
+        return await admin4.admin_stock_add_handler(update, context)
+    if ud.get("admin_new_prod"):
+        return await admin4.admin_new_product_handler(update, context)
+    if ud.get("admin_msg_user"):
+        return await admin5.admin_msg_user_handler(update, context)
+    if ud.get("admin_sub_add"):
+        return await admin6.admin_sub_add_handler(update, context)
+
+    # ─── USUÁRIO COMUM
     if ud.get("awaiting_multi"):
         return await multi.multi_qty_handler(update, context)
     if ud.get("awaiting_gift"):
@@ -811,8 +844,7 @@ async def _text_router(update: Update, context):
 async def _open_miniapp(update: Update, context):
     query = update.callback_query
     await query.answer()
-    user_id = query.from_user.id
-    url = f"{MINIAPP_BASE_URL}/miniapp/senha/{user_id}"
+    url = f"{MINIAPP_BASE_URL}/miniapp/senha/{query.from_user.id}"
     kb = InlineKeyboardMarkup([[
         InlineKeyboardButton("🔐 Abrir Cadastro de Senha", web_app={"url": url})
     ]])
@@ -823,19 +855,22 @@ async def _open_miniapp(update: Update, context):
         )
     except Exception:
         await context.bot.send_message(
-            chat_id=query.message.chat_id,
-            text="🔐 Abra o mini app:",
-            reply_markup=kb,
+            chat_id=query.message.chat_id, text="🔐 Abra:", reply_markup=kb,
         )
 
 
 # ═══════════════════════════════════════════════
-# BUILD APP (PTB)
+# BUILD APP — REGISTRO DE HANDLERS
 # ═══════════════════════════════════════════════
 def build_app():
     app = ApplicationBuilder().token(BOT_TOKEN).post_init(post_init).build()
 
-    # ─── COMANDOS
+    # ─── MIDDLEWARE PRIMEIRO
+    app.add_handler(TypeHandler(Update, _middleware), group=-1)
+
+    # ═══════════════════════════════════════════
+    # COMANDOS
+    # ═══════════════════════════════════════════
     app.add_handler(CommandHandler("start", start.start_command))
     app.add_handler(CommandHandler("pago", mark_paid))
     app.add_handler(CommandHandler("cancelar", cancelar))
@@ -845,6 +880,7 @@ def build_app():
     app.add_handler(CommandHandler("broadcast", notif.broadcast_command))
     app.add_handler(CommandHandler("addstock", admin_stock.addstock_command))
     app.add_handler(CommandHandler("stock", admin_stock.stock_command))
+    app.add_handler(CommandHandler("admin", admin1.admin_panel))
 
     # ─── GATE
     app.add_handler(
@@ -854,81 +890,171 @@ def build_app():
     # ─── INLINE
     app.add_handler(InlineQueryHandler(inline.inline_query))
 
-    # ─── AÇÕES DIRETAS
+    # ═══════════════════════════════════════════
+    # ADMIN — Callbacks (ordem importa: específicos antes dos genéricos)
+    # ═══════════════════════════════════════════
+
+    # ─── ADMIN 1 — Dashboard / Usuários / Produtos básicos
+    app.add_handler(CallbackQueryHandler(admin1.admin_home_cb,             pattern=r"^admin:home$"))
+    app.add_handler(CallbackQueryHandler(admin1.admin_users_cb,            pattern=r"^admin:users$"))
+    app.add_handler(CallbackQueryHandler(admin1.admin_user_search_prompt,  pattern=r"^admin:user_search$"))
+    app.add_handler(CallbackQueryHandler(admin1.admin_user_cb,             pattern=r"^admin:user:\d+$"))
+    app.add_handler(CallbackQueryHandler(admin1.admin_add_balance_prompt,  pattern=r"^admin:add_balance:\d+$"))
+    app.add_handler(CallbackQueryHandler(admin1.admin_rem_balance_prompt,  pattern=r"^admin:rem_balance:\d+$"))
+    app.add_handler(CallbackQueryHandler(admin1.admin_ban_cb,              pattern=r"^admin:ban:\d+$"))
+    app.add_handler(CallbackQueryHandler(admin1.admin_unban_cb,            pattern=r"^admin:unban:\d+$"))
+    app.add_handler(CallbackQueryHandler(admin1.admin_broadcast_cb,        pattern=r"^admin:broadcast$"))
+    app.add_handler(CallbackQueryHandler(admin1.admin_bc_prompt,           pattern=r"^admin:bc_"))
+    app.add_handler(CallbackQueryHandler(admin1.admin_maintenance_cb,      pattern=r"^admin:maintenance$"))
+    app.add_handler(CallbackQueryHandler(admin1.admin_toggle_maintenance_cb, pattern=r"^admin:toggle_maintenance$"))
+    app.add_handler(CallbackQueryHandler(admin1.admin_logs_cb,             pattern=r"^admin:logs$"))
+
+    # ─── ADMIN 2 — Vendas / Gifts / Saques / Afiliados
+    app.add_handler(CallbackQueryHandler(admin2.admin_purchases_cb,        pattern=r"^admin:purchases$"))
+    app.add_handler(CallbackQueryHandler(admin2.admin_purchase_search_prompt, pattern=r"^admin:purchase_search$"))
+    app.add_handler(CallbackQueryHandler(admin2.admin_purchase_cb,         pattern=r"^admin:purchase:[^:]+$"))
+    app.add_handler(CallbackQueryHandler(admin2.admin_refund_cb,           pattern=r"^admin:refund:[^:]+$"))
+    app.add_handler(CallbackQueryHandler(admin2.admin_resend_cb,           pattern=r"^admin:resend:[^:]+$"))
+
+    app.add_handler(CallbackQueryHandler(admin2.admin_gifts_cb,            pattern=r"^admin:gifts$"))
+    app.add_handler(CallbackQueryHandler(admin2.admin_gift_create_prompt,  pattern=r"^admin:gift_create$"))
+    app.add_handler(CallbackQueryHandler(admin2.admin_gift_tipo_cb,        pattern=r"^admin:gift_tipo:"))
+    app.add_handler(CallbackQueryHandler(admin2.admin_gift_del_cb,         pattern=r"^admin:gift_del:"))
+    app.add_handler(CallbackQueryHandler(admin2.admin_gift_cb,             pattern=r"^admin:gift:[^:]+$"))
+
+    app.add_handler(CallbackQueryHandler(admin2.admin_withdrawals_cb,      pattern=r"^admin:withdrawals$"))
+    app.add_handler(CallbackQueryHandler(admin2.admin_wd_approve_cb,       pattern=r"^admin:wd_ok:[^:]+$"))
+    app.add_handler(CallbackQueryHandler(admin2.admin_wd_reject_cb,        pattern=r"^admin:wd_no:[^:]+$"))
+    app.add_handler(CallbackQueryHandler(admin2.admin_withdrawal_cb,       pattern=r"^admin:wd:[^:]+$"))
+
+    app.add_handler(CallbackQueryHandler(admin2.admin_affiliates_cb,       pattern=r"^admin:affiliates$"))
+    app.add_handler(CallbackQueryHandler(admin2.admin_aff_on_cb,           pattern=r"^admin:aff_on:\d+$"))
+    app.add_handler(CallbackQueryHandler(admin2.admin_aff_off_cb,          pattern=r"^admin:aff_off:\d+$"))
+    app.add_handler(CallbackQueryHandler(admin2.admin_affiliate_cb,        pattern=r"^admin:aff:\d+$"))
+
+    # ─── ADMIN 3 — Estatísticas / Config / Textos / Botões / Banner
+    app.add_handler(CallbackQueryHandler(admin3.admin_stats_cb,            pattern=r"^admin:stats$"))
+    app.add_handler(CallbackQueryHandler(admin3.admin_stats_daily_cb,      pattern=r"^admin:stats_daily$"))
+    app.add_handler(CallbackQueryHandler(admin3.admin_stats_products_cb,   pattern=r"^admin:stats_products$"))
+    app.add_handler(CallbackQueryHandler(admin3.admin_stats_spenders_cb,   pattern=r"^admin:stats_spenders$"))
+
+    app.add_handler(CallbackQueryHandler(admin3.admin_config_cb,           pattern=r"^admin:config$"))
+    app.add_handler(CallbackQueryHandler(admin3.admin_cfg_edit_prompt,     pattern=r"^admin:cfg:"))
+
+    app.add_handler(CallbackQueryHandler(admin3.admin_texts_cb,            pattern=r"^admin:texts$"))
+    app.add_handler(CallbackQueryHandler(admin3.admin_text_edit_prompt,    pattern=r"^admin:text_edit:"))
+    app.add_handler(CallbackQueryHandler(admin3.admin_text_cb,             pattern=r"^admin:text:[^:]+$"))
+
+    app.add_handler(CallbackQueryHandler(admin3.admin_buttons_cb,          pattern=r"^admin:buttons$"))
+    app.add_handler(CallbackQueryHandler(admin3.admin_btn_edit_prompt,     pattern=r"^admin:btn_edit:"))
+    app.add_handler(CallbackQueryHandler(admin3.admin_button_cb,           pattern=r"^admin:btn:[^:]+$"))
+
+    app.add_handler(CallbackQueryHandler(admin3.admin_banner_cb,           pattern=r"^admin:banner$"))
+    app.add_handler(CallbackQueryHandler(admin3.admin_banner_new_cb,       pattern=r"^admin:banner_new$"))
+    app.add_handler(CallbackQueryHandler(admin3.admin_banner_del_cb,       pattern=r"^admin:banner_del$"))
+
+    # ─── ADMIN 4 — Produtos completos / Estoque
+    app.add_handler(CallbackQueryHandler(admin4.admin_new_product_cb,      pattern=r"^admin:new_product$"))
+    app.add_handler(CallbackQueryHandler(admin4.admin_prod_edit_prompt,    pattern=r"^admin:prod_edit:"))
+    app.add_handler(CallbackQueryHandler(admin4.admin_prod_stock_cb,       pattern=r"^admin:prod_stock:\d+$"))
+    app.add_handler(CallbackQueryHandler(admin4.admin_stock_add_prompt,    pattern=r"^admin:stock_add:\d+$"))
+    app.add_handler(CallbackQueryHandler(admin4.admin_stock_view_cb,       pattern=r"^admin:stock_view:\d+$"))
+    app.add_handler(CallbackQueryHandler(admin4.admin_stock_clear_cb,      pattern=r"^admin:stock_clear:\d+$"))
+    app.add_handler(CallbackQueryHandler(admin4.admin_prod_del_cb,         pattern=r"^admin:prod_del:\d+$"))
+    app.add_handler(CallbackQueryHandler(admin4.admin_toggle_product_cb,   pattern=r"^admin:toggle_product:\d+$"))
+    app.add_handler(CallbackQueryHandler(admin4.admin_product_v2_cb,       pattern=r"^admin:product:\d+$"))
+    app.add_handler(CallbackQueryHandler(admin4.admin_products_v2_cb,      pattern=r"^admin:products$"))
+
+    # ─── ADMIN 5 — Carrinhos / Msg direta / Backup
+    app.add_handler(CallbackQueryHandler(admin5.admin_abandoned_cb,        pattern=r"^admin:abandoned$"))
+    app.add_handler(CallbackQueryHandler(admin5.admin_abandoned_send_cb,   pattern=r"^admin:abandoned_send:\d+:\d+$"))
+    app.add_handler(CallbackQueryHandler(admin5.admin_abandoned_del_cb,    pattern=r"^admin:abandoned_del:\d+:\d+$"))
+    app.add_handler(CallbackQueryHandler(admin5.admin_abandoned_item_cb,   pattern=r"^admin:abandoned:\d+:\d+$"))
+    app.add_handler(CallbackQueryHandler(admin5.admin_msg_user_prompt,     pattern=r"^admin:msg_user:\d+$"))
+    app.add_handler(CallbackQueryHandler(admin5.admin_backup_cb,           pattern=r"^admin:backup$"))
+
+    # ─── ADMIN 6 — Sub-admins / Export
+    app.add_handler(CallbackQueryHandler(admin6.admin_subadmins_cb,        pattern=r"^admin:subadmins$"))
+    app.add_handler(CallbackQueryHandler(admin6.admin_sub_add_cb,          pattern=r"^admin:sub_add$"))
+    app.add_handler(CallbackQueryHandler(admin6.admin_sub_edit_cb,         pattern=r"^admin:sub_edit:\d+$"))
+    app.add_handler(CallbackQueryHandler(admin6.admin_sub_toggle_cb,       pattern=r"^admin:sub_tog:\d+:"))
+    app.add_handler(CallbackQueryHandler(admin6.admin_sub_all_cb,          pattern=r"^admin:sub_all:\d+$"))
+    app.add_handler(CallbackQueryHandler(admin6.admin_sub_del_cb,          pattern=r"^admin:sub_del:\d+$"))
+    app.add_handler(CallbackQueryHandler(admin6.admin_sub_cb,              pattern=r"^admin:sub:\d+$"))
+
+    app.add_handler(CallbackQueryHandler(admin6.admin_export_cb,           pattern=r"^admin:export$"))
+    app.add_handler(CallbackQueryHandler(admin6.admin_export_run_cb,       pattern=r"^admin:export:"))
+
+    # ═══════════════════════════════════════════
+    # HANDLERS DE USUÁRIO
+    # ═══════════════════════════════════════════
     app.add_handler(CallbackQueryHandler(direct.direct_router, pattern=r"^direct:"))
-
-    # ─── ENTREGA
     app.add_handler(CallbackQueryHandler(delivery.reveal_product, pattern=r"^delivery:reveal:"))
-
-    # ─── PIX COMPRA
     app.add_handler(CallbackQueryHandler(buy.generate_pix,   pattern=r"^pix:gen:"))
     app.add_handler(CallbackQueryHandler(buy.copy_pix,       pattern=r"^pix:copy:"))
     app.add_handler(CallbackQueryHandler(buy.check_pix,      pattern=r"^pix:check:"))
     app.add_handler(CallbackQueryHandler(buy.cancel_pix,     pattern=r"^pix:cancel:"))
     app.add_handler(CallbackQueryHandler(buy.cancel_new_pix, pattern=r"^pix:new_cancel$"))
-
-    # ─── PIX RECARGA
     app.add_handler(CallbackQueryHandler(topup.topup_copy,   pattern=r"^toppix:copy:"))
     app.add_handler(CallbackQueryHandler(topup.topup_check,  pattern=r"^toppix:check:"))
     app.add_handler(CallbackQueryHandler(topup.topup_cancel, pattern=r"^toppix:cancel:"))
-
-    # ─── RECARGA
     app.add_handler(CallbackQueryHandler(topup.topup_pix_open, pattern=r"^topup:pix$"))
-
-    # ─── COMPRA
     app.add_handler(CallbackQueryHandler(buy.buy_single,      pattern=r"^buy:"))
     app.add_handler(CallbackQueryHandler(multi.multi_start,   pattern=r"^buymulti:"))
     app.add_handler(CallbackQueryHandler(multi.multi_confirm, pattern=r"^multi:confirm:"))
     app.add_handler(CallbackQueryHandler(multi.multi_cancel,  pattern=r"^multi:cancel$"))
-
-    # ─── HISTÓRICO
     app.add_handler(CallbackQueryHandler(history.history_router, pattern=r"^hist:"))
     app.add_handler(CallbackQueryHandler(history.history_router, pattern=r"^profile:history$"))
-
-    # ─── GIFT
     app.add_handler(CallbackQueryHandler(gift.gift_open,   pattern=r"^profile:gift$"))
     app.add_handler(CallbackQueryHandler(gift.gift_cancel, pattern=r"^gift:cancel$"))
     app.add_handler(CallbackQueryHandler(gift.gift_use,    pattern=r"^gift:use$"))
-
-    # ─── ALTERAR
     app.add_handler(CallbackQueryHandler(alterdata.alter_open,     pattern=r"^profile:alter$"))
     app.add_handler(CallbackQueryHandler(alterdata.alter_whatsapp, pattern=r"^alter:whatsapp$"))
-
-    # ─── AFILIADOS
     app.add_handler(CallbackQueryHandler(affiliates.affiliates_open, pattern=r"^menu:affiliates$"))
     app.add_handler(CallbackQueryHandler(affiliates.affiliates_open, pattern=r"^aff:menu$"))
     app.add_handler(CallbackQueryHandler(affiliates.affiliates_join, pattern=r"^aff:join$"))
-
-    # ─── HISTÓRICO SAQUE
     app.add_handler(CallbackQueryHandler(withdraw_history.withdraw_history, pattern=r"^aff:whist$"))
-
-    # ─── SAQUES
     app.add_handler(CallbackQueryHandler(withdraw.withdraw_open,        pattern=r"^aff:withdraw$"))
     app.add_handler(CallbackQueryHandler(withdraw.withdraw_type,        pattern=r"^wd:type:"))
     app.add_handler(CallbackQueryHandler(withdraw.withdraw_confirm_key, pattern=r"^wd:confirm_key$"))
     app.add_handler(CallbackQueryHandler(withdraw.withdraw_edit_key,    pattern=r"^wd:edit_key$"))
     app.add_handler(CallbackQueryHandler(withdraw.withdraw_sacar,       pattern=r"^wd:sacar$"))
-
-    # ─── MINI APP
     app.add_handler(CallbackQueryHandler(_open_miniapp, pattern=r"^aff:setpin$"))
-
-    # ─── TOP
     app.add_handler(CallbackQueryHandler(top.top_open,   pattern=r"^menu:top$"))
     app.add_handler(CallbackQueryHandler(top.top_filter, pattern=r"^top:"))
-
-    # ─── PESQUISAR
     app.add_handler(CallbackQueryHandler(search.search_open, pattern=r"^menu:search$"))
-
-    # ─── PRODUTO
     app.add_handler(CallbackQueryHandler(catalog.product_callback, pattern=r"^prod:"))
-
-    # ─── MENU (fallback)
     app.add_handler(CallbackQueryHandler(menu.menu_router))
 
-    # ─── TEXTO LIVRE
+    # ═══════════════════════════════════════════
+    # TEXTO LIVRE
+    # ═══════════════════════════════════════════
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, _text_router))
 
+    # ═══════════════════════════════════════════
+    # MÍDIA — Banner + Broadcast com foto/vídeo
+    # ═══════════════════════════════════════════
+    app.add_handler(MessageHandler(
+        filters.PHOTO | filters.VIDEO,
+        _media_router,
+    ))
+
     return app
+
+
+# ═══════════════════════════════════════════════
+# ROTEADOR DE MÍDIA
+# ═══════════════════════════════════════════════
+async def _media_router(update: Update, context):
+    ud = context.user_data
+
+    # Banner
+    if ud.get("admin_banner_new"):
+        return await admin3.admin_banner_photo_handler(update, context)
+
+    # Broadcast com mídia
+    if ud.get("admin_bc"):
+        return await admin5.admin_bc_media_handler(update, context)
 
 
 # ═══════════════════════════════════════════════
@@ -942,7 +1068,6 @@ def main():
 
     bot_app = build_app()
 
-    # ─── allowed_updates garante que o PTB receba updates de chat_member
     _ALLOWED = [
         "message",
         "edited_message",
