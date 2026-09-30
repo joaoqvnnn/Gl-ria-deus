@@ -1,5 +1,5 @@
 import asyncio
-from telegram import Update, ForceReply, InputMediaPhoto
+from telegram import Update, InputMediaPhoto
 from telegram.constants import ParseMode
 from telegram.ext import ContextTypes
 
@@ -12,6 +12,9 @@ from services import channel_notify
 from texts import messages
 
 
+# ═══════════════════════════════════════════════
+# 💠 MENU DE RECARGA
+# ═══════════════════════════════════════════════
 async def topup_open(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -22,6 +25,9 @@ async def topup_open(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 
+# ═══════════════════════════════════════════════
+# 💠 PIX RÁPIDO — prompt do valor (sem ForceReply)
+# ═══════════════════════════════════════════════
 async def topup_pix_open(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -37,13 +43,10 @@ async def topup_pix_open(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception:
         pass
 
-    await context.bot.send_message(
-        chat_id=query.message.chat_id,
-        text="Digite o valor abaixo 👇",
-        reply_markup=ForceReply(selective=True),
-    )
 
-
+# ═══════════════════════════════════════════════
+# 💠 RECEBE O VALOR
+# ═══════════════════════════════════════════════
 async def topup_value_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not context.user_data.get("awaiting_topup_value"):
         return
@@ -69,12 +72,14 @@ async def topup_value_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
     saldo_atual = float(u["balance"])
     saldo_futuro = saldo_atual + valor + bonus
 
+    # ⏳ Nova mensagem "Gerando pagamento..."
     await context.bot.send_message(
         chat_id=update.message.chat_id,
         text=messages.generating_payment_text(),
         parse_mode=ParseMode.HTML,
     )
 
+    # Gera PIX
     pix_data = pix_service.gerar_pix(valor, "Recarga Larizinha")
     await db.create_pix(
         pix_data["id"], user.id, valor, "recarga", None, None, pix_data["copia_cola"]
@@ -82,8 +87,10 @@ async def topup_value_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
 
     context.user_data[f"bonus:{pix_data['id']}"] = bonus
 
+    # Aguarda 2s
     await asyncio.sleep(2)
 
+    # QR com valores embutidos
     img = qrcode_gen.generate_pix_image(
         pix_code=pix_data["copia_cola"],
         valor=valor,
@@ -106,6 +113,9 @@ async def topup_value_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
     )
 
 
+# ═══════════════════════════════════════════════
+# 📋 COPIAR PIX
+# ═══════════════════════════════════════════════
 async def topup_copy(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     pix_id = query.data.split(":", 2)[2]
@@ -116,6 +126,9 @@ async def topup_copy(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.answer(f"PIX Copia e Cola:\n\n{pix['copia_cola']}", show_alert=True)
 
 
+# ═══════════════════════════════════════════════
+# ⏰ AGUARDANDO PAGAMENTO
+# ═══════════════════════════════════════════════
 async def topup_check(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -169,6 +182,9 @@ async def topup_check(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 
+# ═══════════════════════════════════════════════
+# ❌ CANCELAR
+# ═══════════════════════════════════════════════
 async def topup_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
