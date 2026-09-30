@@ -1,6 +1,9 @@
 import aiosqlite
 import uuid
 import hashlib
+import json as _json
+import csv as _csv
+import io as _io
 from datetime import datetime, timedelta
 from config import DB_PATH
 
@@ -166,15 +169,53 @@ async def init_db():
             created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         );
 
+        CREATE TABLE IF NOT EXISTS sub_admin_logs (
+            id         INTEGER PRIMARY KEY AUTOINCREMENT,
+            admin_id   INTEGER NOT NULL,
+            action     TEXT NOT NULL,
+            target     TEXT,
+            details    TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );
+
+        CREATE TABLE IF NOT EXISTS bot_broadcasts (
+            id           TEXT PRIMARY KEY,
+            segmento     TEXT,
+            texto        TEXT,
+            midia_id     TEXT,
+            midia_tipo   TEXT,
+            botoes_json  TEXT,
+            status       TEXT DEFAULT 'draft',
+            agendado_para TIMESTAMP,
+            total_destinos INTEGER DEFAULT 0,
+            enviados     INTEGER DEFAULT 0,
+            falhas       INTEGER DEFAULT 0,
+            iniciado_em  TIMESTAMP,
+            terminado_em TIMESTAMP,
+            created_by   INTEGER,
+            created_at   TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );
+
+        CREATE TABLE IF NOT EXISTS backups_history (
+            id         INTEGER PRIMARY KEY AUTOINCREMENT,
+            filename   TEXT NOT NULL,
+            tamanho    INTEGER DEFAULT 0,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            created_by INTEGER
+        );
+
         CREATE INDEX IF NOT EXISTS idx_purchases_user ON purchases(user_id);
         CREATE INDEX IF NOT EXISTS idx_purchases_prod ON purchases(product_id);
         CREATE INDEX IF NOT EXISTS idx_pix_user       ON pix_pending(user_id);
         CREATE INDEX IF NOT EXISTS idx_cart_notified  ON cart_views(notified);
+        CREATE INDEX IF NOT EXISTS idx_bc_status      ON bot_broadcasts(status);
+        CREATE INDEX IF NOT EXISTS idx_bc_agend       ON bot_broadcasts(agendado_para);
+        CREATE INDEX IF NOT EXISTS idx_sub_logs_admin ON sub_admin_logs(admin_id);
         """
     )
     await _db.commit()
 
-    # ─── Colunas novas em users (seguro para bases antigas)
+    # ─── users
     await _try_alter("ALTER TABLE users ADD COLUMN referred_by INTEGER")
     await _try_alter("ALTER TABLE users ADD COLUMN is_affiliate INTEGER DEFAULT 0")
     await _try_alter("ALTER TABLE users ADD COLUMN payout_password TEXT")
@@ -185,14 +226,33 @@ async def init_db():
     await _try_alter("ALTER TABLE users ADD COLUMN balance_web REAL DEFAULT 0")
     await _try_alter("ALTER TABLE users ADD COLUMN age_verified INTEGER DEFAULT 0")
     await _try_alter("ALTER TABLE users ADD COLUMN banned INTEGER DEFAULT 0")
+    await _try_alter("ALTER TABLE users ADD COLUMN banned_until TIMESTAMP")
+    await _try_alter("ALTER TABLE users ADD COLUMN ban_reason TEXT")
 
-    # ─── Colunas novas em products
+    # ─── products
     await _try_alter("ALTER TABLE products ADD COLUMN image_url TEXT")
+    await _try_alter("ALTER TABLE products ADD COLUMN promo_price REAL")
+    await _try_alter("ALTER TABLE products ADD COLUMN category TEXT")
 
-    # ─── Coluna nova em purchases
+    # ─── purchases
     await _try_alter("ALTER TABLE purchases ADD COLUMN status TEXT DEFAULT 'active'")
 
-    # ─── Índices que dependem de colunas novas
+    # ─── withdrawals
+    await _try_alter("ALTER TABLE withdrawals ADD COLUMN reject_reason TEXT")
+
+    # ─── gift_cards
+    await _try_alter("ALTER TABLE gift_cards ADD COLUMN expires_at TIMESTAMP")
+    await _try_alter("ALTER TABLE gift_cards ADD COLUMN discount_pct REAL")
+
+    # ─── sub_admins
+    await _try_alter("ALTER TABLE sub_admins ADD COLUMN expires_at TIMESTAMP")
+    await _try_alter("ALTER TABLE sub_admins ADD COLUMN created_by INTEGER")
+
+    # ─── cart_views
+    await _try_alter("ALTER TABLE cart_views ADD COLUMN reminders_sent INTEGER DEFAULT 0")
+    await _try_alter("ALTER TABLE cart_views ADD COLUMN converted INTEGER DEFAULT 0")
+
+    # ─── índices dependentes
     await _try_alter(
         "CREATE INDEX IF NOT EXISTS idx_users_referred_by ON users(referred_by)"
     )
@@ -353,7 +413,8 @@ async def increment_stock(pid: int, qty: int):
     await _db.commit()
 
 
-async def add_product(name, description, price, stock, emoji="📦", activate_url="https://t.me/", image_url=None):
+async def add_product(name, description, price, stock, emoji="📦",
+                     activate_url="https://t.me/", image_url=None):
     await _db.execute(
         "INSERT INTO products (name, description, price, stock, emoji, activate_url, image_url) "
         "VALUES (?, ?, ?, ?, ?, ?, ?)",
@@ -409,7 +470,8 @@ async def list_available_stock(product_id: int):
 # ═══════════════════════════════════════════════
 # PURCHASES
 # ═══════════════════════════════════════════════
-async def create_purchase(user_id, product_id, product_name, quantity, total, email, password, days=30):
+async def create_purchase(user_id, product_id, product_name, quantity, total,
+                         email, password, days=30):
     purchase_id = str(uuid.uuid4())
     expires = (datetime.now() + timedelta(days=days)).strftime("%Y-%m-%d %H:%M:%S")
     await _db.execute(
@@ -423,7 +485,7 @@ async def create_purchase(user_id, product_id, product_name, quantity, total, em
 
 
 async def create_purchase_with_id(purchase_id, user_id, product_id, product_name,
-                                  quantity, total, email, password, days=30):
+                                 quantity, total, email, password, days=30):
     expires = (datetime.now() + timedelta(days=days)).strftime("%Y-%m-%d %H:%M:%S")
     await _db.execute(
         "INSERT INTO purchases (id, user_id, product_id, product_name, quantity, total, email, password, expires_at) "
@@ -586,7 +648,6 @@ async def mark_withdrawal_processed(wid: str):
 # TOP COMPRADORES
 # ═══════════════════════════════════════════════
 async def top_buyers(limit: int = 10):
-    """Produtos mais vendidos (nome + qtd de pedidos)."""
     cur = await _db.execute(
         "SELECT product_name AS first_name, "
         "       COALESCE(SUM(quantity), 0) AS pedidos, "
@@ -632,7 +693,7 @@ async def top_by_gift(limit: int = 10):
 
 
 # ═══════════════════════════════════════════════
-# CARRINHO ABANDONADO
+# CARRINHO ABANDONADO (base)
 # ═══════════════════════════════════════════════
 async def save_cart_view(user_id: int, product_id: int):
     await _db.execute(
@@ -742,7 +803,7 @@ async def admin_set_config(key: str, value: str):
 
 
 # ═══════════════════════════════════════════════
-# ADMIN — STATS / USUÁRIOS / LOGS
+# ADMIN — STATS / USUÁRIOS / LOGS (base)
 # ═══════════════════════════════════════════════
 async def admin_stats() -> dict:
     hoje = datetime.now().strftime("%Y-%m-%d")
@@ -896,7 +957,7 @@ async def inactive_user_ids(days: int = 7):
 
 
 # ═══════════════════════════════════════════════
-# ADMIN — VENDAS / GIFTS / SAQUES / AFILIADOS
+# ADMIN — VENDAS / GIFTS / SAQUES / AFILIADOS (base)
 # ═══════════════════════════════════════════════
 async def admin_list_purchases(limit: int = 10, offset: int = 0):
     cur = await _db.execute(
@@ -1060,7 +1121,7 @@ async def admin_set_affiliate(user_id: int, ativo: bool):
 
 
 # ═══════════════════════════════════════════════
-# ADMIN — ESTATÍSTICAS DETALHADAS
+# ADMIN — ESTATÍSTICAS (base)
 # ═══════════════════════════════════════════════
 async def admin_sales_by_day(days: int = 7):
     cur = await _db.execute(
@@ -1120,7 +1181,7 @@ async def admin_carrinhos_pendentes() -> int:
 
 
 # ═══════════════════════════════════════════════
-# ADMIN — TEXTOS / BOTÕES
+# ADMIN — TEXTOS / BOTÕES (base)
 # ═══════════════════════════════════════════════
 async def admin_list_texts():
     cur = await _db.execute("SELECT key, value FROM bot_texts ORDER BY key ASC")
@@ -1165,7 +1226,7 @@ async def admin_get_banner() -> str:
 
 
 # ═══════════════════════════════════════════════
-# ADMIN — PRODUTOS COMPLETOS
+# ADMIN — PRODUTOS COMPLETOS (base)
 # ═══════════════════════════════════════════════
 async def admin_create_product(name, description, price, stock,
                                emoji="📦", guarantee=180, activate_url="https://t.me/"):
@@ -1184,6 +1245,7 @@ async def admin_update_product(pid: int, **campos):
     permitidos = {
         "name", "description", "price", "stock",
         "emoji", "guarantee", "activate_url", "image_url", "active", "sold",
+        "promo_price", "category",
     }
     sets, valores = [], []
     for k, v in campos.items():
@@ -1209,7 +1271,7 @@ async def admin_really_delete_product(pid: int):
 
 
 # ═══════════════════════════════════════════════
-# ADMIN — ESTOQUE
+# ADMIN — ESTOQUE (base)
 # ═══════════════════════════════════════════════
 async def admin_add_stock_batch(pid: int, contas: list[tuple[str, str]]) -> int:
     if not contas:
@@ -1268,7 +1330,7 @@ async def admin_clear_stock(pid: int, apenas_nao_usadas: bool = True) -> int:
 
 
 # ═══════════════════════════════════════════════
-# ADMIN — MENSAGEM DIRETA / CARRINHOS / BACKUP
+# ADMIN — MENSAGEM DIRETA / CARRINHOS / BACKUP (base)
 # ═══════════════════════════════════════════════
 async def admin_send_direct(user_id: int, texto: str) -> bool:
     return (await get_user(user_id)) is not None
@@ -1310,7 +1372,7 @@ async def admin_backup_bytes() -> bytes:
 
 
 # ═══════════════════════════════════════════════
-# SUB-ADMINS
+# SUB-ADMINS (base)
 # ═══════════════════════════════════════════════
 async def admin_list_subadmins():
     cur = await _db.execute("SELECT * FROM sub_admins ORDER BY created_at DESC")
@@ -1343,6 +1405,17 @@ async def admin_is_admin_or_sub(user_id: int):
         return True, "all"
     sub = await admin_get_subadmin(user_id)
     if sub:
+        # Verifica expiração
+        exp = sub.get("expires_at")
+        if exp:
+            try:
+                exp_dt = datetime.strptime(str(exp)[:19], "%Y-%m-%d %H:%M:%S")
+                if exp_dt <= datetime.now():
+                    # Expirado — remove e retorna False
+                    await admin_remove_subadmin(user_id)
+                    return False, ""
+            except Exception:
+                pass
         return True, sub.get("permissoes", "")
     return False, ""
 
@@ -1356,17 +1429,16 @@ def sub_tem_permissao(permissoes: str, area: str) -> bool:
 
 
 # ═══════════════════════════════════════════════
-# EXPORTAR CSV
+# EXPORTAR CSV (base)
 # ═══════════════════════════════════════════════
 async def admin_export_users_csv() -> str:
-    import csv, io
     cur = await _db.execute(
         "SELECT user_id, username, first_name, balance, balance_web, whatsapp, "
         "banned, is_affiliate, created_at FROM users ORDER BY user_id ASC"
     )
     rows = await cur.fetchall()
-    buf = io.StringIO()
-    writer = csv.writer(buf)
+    buf = _io.StringIO()
+    writer = _csv.writer(buf)
     writer.writerow(["user_id", "username", "first_name", "balance",
                      "balance_web", "whatsapp", "banned", "is_affiliate", "created_at"])
     for r in rows:
@@ -1379,14 +1451,13 @@ async def admin_export_users_csv() -> str:
 
 
 async def admin_export_purchases_csv() -> str:
-    import csv, io
     cur = await _db.execute(
         "SELECT id, user_id, product_name, quantity, total, email, "
         "created_at, expires_at, status FROM purchases ORDER BY created_at DESC"
     )
     rows = await cur.fetchall()
-    buf = io.StringIO()
-    writer = csv.writer(buf)
+    buf = _io.StringIO()
+    writer = _csv.writer(buf)
     writer.writerow(["id", "user_id", "product_name", "quantity", "total", "email",
                      "created_at", "expires_at", "status"])
     for r in rows:
@@ -1399,14 +1470,13 @@ async def admin_export_purchases_csv() -> str:
 
 
 async def admin_export_withdrawals_csv() -> str:
-    import csv, io
     cur = await _db.execute(
         "SELECT id, user_id, amount, pix_key_type, pix_key, status, "
         "created_at, processed_at FROM withdrawals ORDER BY created_at DESC"
     )
     rows = await cur.fetchall()
-    buf = io.StringIO()
-    writer = csv.writer(buf)
+    buf = _io.StringIO()
+    writer = _csv.writer(buf)
     writer.writerow(["id", "user_id", "amount", "pix_key_type", "pix_key",
                      "status", "created_at", "processed_at"])
     for r in rows:
@@ -1416,6 +1486,1693 @@ async def admin_export_withdrawals_csv() -> str:
             r["status"] or "pending", r["created_at"] or "", r["processed_at"] or "",
         ])
     return buf.getvalue()
+
+
+# ═══════════════════════════════════════════════
+# ADMIN — PRODUTOS (extras do módulo novo - admin4)
+# ═══════════════════════════════════════════════
+async def admin_all_products(limit: int = 8, offset: int = 0):
+    cur = await _db.execute(
+        "SELECT * FROM products ORDER BY id DESC LIMIT ? OFFSET ?",
+        (limit, offset),
+    )
+    return [dict(r) for r in await cur.fetchall()]
+
+
+async def admin_count_products_total() -> int:
+    cur = await _db.execute("SELECT COUNT(*) AS c FROM products")
+    return int((await cur.fetchone())["c"])
+
+
+async def admin_clone_product(pid: int) -> int:
+    p = await get_product(pid)
+    if not p:
+        return 0
+    cur = await _db.execute(
+        "INSERT INTO products (name, description, price, stock, emoji, "
+        "guarantee, activate_url, image_url, promo_price, category, active) "
+        "VALUES (?, ?, ?, 0, ?, ?, ?, ?, ?, ?, 1)",
+        (
+            f"{p['name']} (cópia)",
+            p.get("description") or "",
+            p["price"],
+            p.get("emoji") or "📦",
+            p.get("guarantee") or 180,
+            p.get("activate_url") or "https://t.me/",
+            p.get("image_url"),
+            p.get("promo_price"),
+            p.get("category"),
+        ),
+    )
+    await _db.commit()
+    return cur.lastrowid
+
+
+async def admin_remove_stock_item(pid: int, email: str) -> int:
+    cur = await _db.execute(
+        "DELETE FROM stock_items WHERE product_id = ? AND email = ? AND used = 0",
+        (pid, email),
+    )
+    n = cur.rowcount or 0
+    if n:
+        await _db.execute(
+            "UPDATE products SET stock = MAX(stock - ?, 0) WHERE id = ?", (n, pid)
+        )
+        await _db.commit()
+    return n
+
+
+async def admin_export_stock(pid: int, only_available: bool = True) -> str:
+    if only_available:
+        cur = await _db.execute(
+            "SELECT email, password FROM stock_items "
+            "WHERE product_id = ? AND used = 0 ORDER BY id ASC",
+            (pid,),
+        )
+    else:
+        cur = await _db.execute(
+            "SELECT email, password FROM stock_items "
+            "WHERE product_id = ? ORDER BY id ASC",
+            (pid,),
+        )
+    rows = await cur.fetchall()
+    return "\n".join(f"{r['email'] or ''}:{r['password'] or ''}" for r in rows)
+
+
+async def admin_stock_stats(pid: int) -> dict:
+    cur = await _db.execute(
+        "SELECT "
+        "  SUM(CASE WHEN used = 0 THEN 1 ELSE 0 END) AS disp, "
+        "  SUM(CASE WHEN used = 1 THEN 1 ELSE 0 END) AS usadas, "
+        "  COUNT(*) AS total "
+        "FROM stock_items WHERE product_id = ?",
+        (pid,),
+    )
+    r = await cur.fetchone()
+    return {
+        "disponiveis": int(r["disp"] or 0),
+        "usadas": int(r["usadas"] or 0),
+        "total": int(r["total"] or 0),
+    }
+
+
+# ═══════════════════════════════════════════════
+# ADMIN — VENDAS (v2 - admin2)
+# ═══════════════════════════════════════════════
+def _build_vendas_where(periodo: str = "tudo", status: str = "todos", produto_id: int | None = None):
+    wheres = []
+    params = []
+
+    if periodo == "hoje":
+        wheres.append("DATE(created_at) = DATE('now')")
+    elif periodo == "7d":
+        wheres.append("DATE(created_at) >= DATE('now', '-7 days')")
+    elif periodo == "30d":
+        wheres.append("DATE(created_at) >= DATE('now', '-30 days')")
+    elif periodo == "mes":
+        wheres.append("strftime('%Y-%m', created_at) = strftime('%Y-%m', 'now')")
+
+    if status == "ativos":
+        wheres.append("(status IS NULL OR status = 'active')")
+    elif status == "cancelados":
+        wheres.append("status = 'cancelled'")
+
+    if produto_id:
+        wheres.append("product_id = ?")
+        params.append(produto_id)
+
+    where_sql = ("WHERE " + " AND ".join(wheres)) if wheres else ""
+    return where_sql, params
+
+
+async def admin_vendas_list(periodo="tudo", status="todos", produto_id=None,
+                             limit=8, offset=0):
+    where_sql, params = _build_vendas_where(periodo, status, produto_id)
+    sql = f"SELECT * FROM purchases {where_sql} ORDER BY created_at DESC LIMIT ? OFFSET ?"
+    cur = await _db.execute(sql, (*params, limit, offset))
+    return [dict(r) for r in await cur.fetchall()]
+
+
+async def admin_vendas_count(periodo="tudo", status="todos", produto_id=None) -> int:
+    where_sql, params = _build_vendas_where(periodo, status, produto_id)
+    cur = await _db.execute(f"SELECT COUNT(*) AS c FROM purchases {where_sql}", params)
+    return int((await cur.fetchone())["c"])
+
+
+async def admin_vendas_stats(periodo="tudo", status="todos", produto_id=None) -> dict:
+    where_sql, params = _build_vendas_where(periodo, status, produto_id)
+    cur = await _db.execute(
+        f"SELECT COUNT(*) AS c, COALESCE(SUM(total), 0) AS s, "
+        f"COALESCE(SUM(quantity), 0) AS q FROM purchases {where_sql}",
+        params,
+    )
+    r = await cur.fetchone()
+    return {
+        "total_pedidos": int(r["c"]),
+        "receita_total": float(r["s"]),
+        "total_itens": int(r["q"]),
+    }
+
+
+async def admin_vendas_export_csv(periodo="tudo", status="todos", produto_id=None) -> str:
+    where_sql, params = _build_vendas_where(periodo, status, produto_id)
+    sql = f"SELECT * FROM purchases {where_sql} ORDER BY created_at DESC"
+    cur = await _db.execute(sql, params)
+    rows = await cur.fetchall()
+
+    buf = _io.StringIO()
+    writer = _csv.writer(buf)
+    writer.writerow([
+        "id", "user_id", "product_name", "quantity", "total",
+        "email", "password", "created_at", "expires_at", "status",
+    ])
+    for r in rows:
+        writer.writerow([
+            r["id"], r["user_id"], r["product_name"] or "",
+            r["quantity"] or 1, f"{float(r['total'] or 0):.2f}",
+            r["email"] or "", r["password"] or "",
+            r["created_at"] or "", r["expires_at"] or "",
+            r["status"] or "active",
+        ])
+    return buf.getvalue()
+
+
+async def admin_mark_purchase_delivered(purchase_id: str) -> bool:
+    cur = await _db.execute("SELECT * FROM purchases WHERE id = ?", (purchase_id,))
+    row = await cur.fetchone()
+    if not row:
+        return False
+    await _db.execute(
+        "UPDATE purchases SET status = 'active' WHERE id = ?", (purchase_id,)
+    )
+    await _db.commit()
+    return True
+
+
+# ═══════════════════════════════════════════════
+# ADMIN — SAQUES (v2 - admin7)
+# ═══════════════════════════════════════════════
+def _wd_where(status: str = "todos"):
+    if status == "todos":
+        return "", []
+    return "WHERE status = ?", [status]
+
+
+async def admin_wd_list_v2(status="todos", limit=8, offset=0):
+    where_sql, params = _wd_where(status)
+    sql = f"SELECT * FROM withdrawals {where_sql} ORDER BY created_at DESC LIMIT ? OFFSET ?"
+    cur = await _db.execute(sql, (*params, limit, offset))
+    return [dict(r) for r in await cur.fetchall()]
+
+
+async def admin_wd_count_v2(status="todos") -> int:
+    where_sql, params = _wd_where(status)
+    cur = await _db.execute(f"SELECT COUNT(*) AS c FROM withdrawals {where_sql}", params)
+    return int((await cur.fetchone())["c"])
+
+
+async def admin_wd_stats_v2() -> dict:
+    stats = {
+        "pendentes_qtd": 0, "pendentes_valor": 0.0,
+        "processados_qtd": 0, "processados_valor": 0.0,
+        "rejeitados_qtd": 0, "rejeitados_valor": 0.0,
+    }
+
+    for status, prefixo in (
+        ("pending", "pendentes"),
+        ("processed", "processados"),
+        ("rejected", "rejeitados"),
+    ):
+        cur = await _db.execute(
+            "SELECT COUNT(*) AS c, COALESCE(SUM(amount), 0) AS s "
+            "FROM withdrawals WHERE status = ?", (status,),
+        )
+        r = await cur.fetchone()
+        stats[f"{prefixo}_qtd"] = int(r["c"])
+        stats[f"{prefixo}_valor"] = float(r["s"])
+
+    return stats
+
+
+async def admin_wd_export_csv_v2(status="todos") -> str:
+    where_sql, params = _wd_where(status)
+    sql = f"SELECT * FROM withdrawals {where_sql} ORDER BY created_at DESC"
+    cur = await _db.execute(sql, params)
+    rows = await cur.fetchall()
+
+    buf = _io.StringIO()
+    writer = _csv.writer(buf)
+    writer.writerow([
+        "id", "user_id", "amount", "pix_key_type", "pix_key",
+        "status", "reject_reason", "created_at", "processed_at",
+    ])
+    for r in rows:
+        writer.writerow([
+            r["id"], r["user_id"], f"{float(r['amount'] or 0):.2f}",
+            r["pix_key_type"] or "", r["pix_key"] or "",
+            r["status"] or "pending",
+            r["reject_reason"] if "reject_reason" in r.keys() else "",
+            r["created_at"] or "",
+            r["processed_at"] or "",
+        ])
+    return buf.getvalue()
+
+
+async def admin_wd_set_reject_reason(wid: str, motivo: str):
+    await _db.execute(
+        "UPDATE withdrawals SET reject_reason = ? WHERE id = ?", (motivo, wid)
+    )
+    await _db.commit()
+
+
+async def admin_wd_search_by_user(user_id: int, limit: int = 10):
+    cur = await _db.execute(
+        "SELECT * FROM withdrawals WHERE user_id = ? ORDER BY created_at DESC LIMIT ?",
+        (user_id, limit),
+    )
+    return [dict(r) for r in await cur.fetchall()]
+
+
+# ═══════════════════════════════════════════════
+# ADMIN — USUÁRIOS (v2 - admin8)
+# ═══════════════════════════════════════════════
+def _usr_where(filtro: str = "todos"):
+    if filtro == "todos":
+        return "", []
+    if filtro == "banidos":
+        return "WHERE banned = 1", []
+    if filtro == "ativos":
+        return "WHERE banned = 0 OR banned IS NULL", []
+    if filtro == "afiliados":
+        return "WHERE is_affiliate = 1", []
+    if filtro == "com_saldo":
+        return "WHERE balance > 0", []
+    if filtro == "sem_saldo":
+        return "WHERE balance <= 0 OR balance IS NULL", []
+    if filtro == "inativos":
+        return "WHERE created_at < datetime('now', '-7 days')", []
+    return "", []
+
+
+async def admin_users_v2_list(filtro="todos", limit=8, offset=0):
+    where_sql, params = _usr_where(filtro)
+    sql = f"SELECT * FROM users {where_sql} ORDER BY created_at DESC LIMIT ? OFFSET ?"
+    cur = await _db.execute(sql, (*params, limit, offset))
+    return [dict(r) for r in await cur.fetchall()]
+
+
+async def admin_users_v2_count(filtro="todos") -> int:
+    where_sql, params = _usr_where(filtro)
+    cur = await _db.execute(f"SELECT COUNT(*) AS c FROM users {where_sql}", params)
+    return int((await cur.fetchone())["c"])
+
+
+async def admin_users_v2_stats() -> dict:
+    cur = await _db.execute("SELECT COUNT(*) AS c FROM users")
+    total = int((await cur.fetchone())["c"])
+
+    cur = await _db.execute("SELECT COUNT(*) AS c FROM users WHERE banned = 1")
+    banidos = int((await cur.fetchone())["c"])
+
+    cur = await _db.execute("SELECT COUNT(*) AS c FROM users WHERE is_affiliate = 1")
+    afiliados = int((await cur.fetchone())["c"])
+
+    cur = await _db.execute("SELECT COALESCE(SUM(balance), 0) AS s FROM users")
+    saldo = float((await cur.fetchone())["s"])
+
+    cur = await _db.execute(
+        "SELECT COUNT(*) AS c FROM users WHERE DATE(created_at) = DATE('now')"
+    )
+    novos_hoje = int((await cur.fetchone())["c"])
+
+    return {
+        "total": total,
+        "banidos": banidos,
+        "afiliados": afiliados,
+        "saldo_total": saldo,
+        "novos_hoje": novos_hoje,
+    }
+
+
+async def admin_users_v2_export_csv(filtro="todos") -> str:
+    where_sql, params = _usr_where(filtro)
+    sql = f"SELECT * FROM users {where_sql} ORDER BY user_id ASC"
+    cur = await _db.execute(sql, params)
+    rows = await cur.fetchall()
+
+    buf = _io.StringIO()
+    writer = _csv.writer(buf)
+    writer.writerow([
+        "user_id", "username", "first_name", "balance", "balance_web",
+        "whatsapp", "banned", "ban_reason", "banned_until",
+        "is_affiliate", "referred_by", "created_at",
+    ])
+    for r in rows:
+        writer.writerow([
+            r["user_id"], r["username"] or "", r["first_name"] or "",
+            f"{float(r['balance'] or 0):.2f}",
+            f"{float(r['balance_web'] or 0):.2f}" if "balance_web" in r.keys() else "0.00",
+            r["whatsapp"] or "",
+            r["banned"] or 0,
+            r["ban_reason"] if "ban_reason" in r.keys() else "",
+            r["banned_until"] if "banned_until" in r.keys() else "",
+            r["is_affiliate"] or 0,
+            r["referred_by"] or "",
+            r["created_at"] or "",
+        ])
+    return buf.getvalue()
+
+
+async def admin_ban_user_temporary(user_id: int, dias: int | None, motivo: str):
+    if dias is None:
+        await _db.execute(
+            "UPDATE users SET banned = 1, ban_reason = ?, banned_until = NULL "
+            "WHERE user_id = ?",
+            (motivo, user_id),
+        )
+    else:
+        await _db.execute(
+            "UPDATE users SET banned = 1, ban_reason = ?, "
+            "banned_until = datetime('now', ?) WHERE user_id = ?",
+            (motivo, f"+{dias} days", user_id),
+        )
+    await _db.commit()
+
+
+async def admin_unban_user_full(user_id: int):
+    await _db.execute(
+        "UPDATE users SET banned = 0, ban_reason = NULL, banned_until = NULL "
+        "WHERE user_id = ?",
+        (user_id,),
+    )
+    await _db.commit()
+
+
+async def admin_set_balance_exact(user_id: int, valor: float):
+    await _db.execute(
+        "UPDATE users SET balance = ? WHERE user_id = ?", (valor, user_id)
+    )
+    await _db.commit()
+
+
+async def admin_zero_balance(user_id: int):
+    await _db.execute(
+        "UPDATE users SET balance = 0 WHERE user_id = ?", (user_id,)
+    )
+    await _db.commit()
+
+
+async def admin_reset_payout_password(user_id: int):
+    await _db.execute(
+        "UPDATE users SET payout_password = NULL WHERE user_id = ?", (user_id,)
+    )
+    await _db.commit()
+
+
+async def admin_user_purchases_preview(user_id: int, limit: int = 5):
+    cur = await _db.execute(
+        "SELECT id, product_name, total, quantity, status, created_at "
+        "FROM purchases WHERE user_id = ? ORDER BY created_at DESC LIMIT ?",
+        (user_id, limit),
+    )
+    return [dict(r) for r in await cur.fetchall()]
+
+
+async def admin_user_purchases_count(user_id: int) -> int:
+    cur = await _db.execute(
+        "SELECT COUNT(*) AS c FROM purchases WHERE user_id = ?", (user_id,)
+    )
+    return int((await cur.fetchone())["c"])
+
+
+async def admin_user_withdrawals_preview(user_id: int, limit: int = 5):
+    cur = await _db.execute(
+        "SELECT id, amount, pix_key, status, created_at "
+        "FROM withdrawals WHERE user_id = ? ORDER BY created_at DESC LIMIT ?",
+        (user_id, limit),
+    )
+    return [dict(r) for r in await cur.fetchall()]
+
+
+async def admin_user_withdrawals_count(user_id: int) -> int:
+    cur = await _db.execute(
+        "SELECT COUNT(*) AS c FROM withdrawals WHERE user_id = ?", (user_id,)
+    )
+    return int((await cur.fetchone())["c"])
+
+
+async def check_expired_bans():
+    try:
+        cur = await _db.execute(
+            "SELECT user_id FROM users WHERE banned = 1 "
+            "AND banned_until IS NOT NULL AND banned_until < datetime('now')"
+        )
+        rows = await cur.fetchall()
+        for r in rows:
+            await _db.execute(
+                "UPDATE users SET banned = 0, ban_reason = NULL, banned_until = NULL "
+                "WHERE user_id = ?",
+                (r["user_id"],),
+            )
+        if rows:
+            await _db.commit()
+    except Exception:
+        pass
+
+
+# ═══════════════════════════════════════════════
+# ADMIN — GIFT CARDS (v2 - admin9)
+# ═══════════════════════════════════════════════
+def _gift_where(filtro: str = "todos"):
+    if filtro == "todos":
+        return "", []
+    if filtro == "livres":
+        return (
+            "WHERE redeemed_by IS NULL "
+            "AND (expires_at IS NULL OR expires_at > datetime('now'))",
+            [],
+        )
+    if filtro == "resgatados":
+        return "WHERE redeemed_by IS NOT NULL", []
+    if filtro == "expirados":
+        return (
+            "WHERE redeemed_by IS NULL "
+            "AND expires_at IS NOT NULL AND expires_at <= datetime('now')",
+            [],
+        )
+    return "", []
+
+
+async def admin_gifts_v2_list(filtro="todos", limit=8, offset=0):
+    where_sql, params = _gift_where(filtro)
+    sql = f"SELECT * FROM gift_cards {where_sql} ORDER BY created_at DESC LIMIT ? OFFSET ?"
+    cur = await _db.execute(sql, (*params, limit, offset))
+    return [dict(r) for r in await cur.fetchall()]
+
+
+async def admin_gifts_v2_count(filtro="todos") -> int:
+    where_sql, params = _gift_where(filtro)
+    cur = await _db.execute(f"SELECT COUNT(*) AS c FROM gift_cards {where_sql}", params)
+    return int((await cur.fetchone())["c"])
+
+
+async def admin_gifts_v2_stats() -> dict:
+    cur = await _db.execute("SELECT COUNT(*) AS c FROM gift_cards")
+    total = int((await cur.fetchone())["c"])
+
+    cur = await _db.execute(
+        "SELECT COUNT(*) AS c FROM gift_cards WHERE redeemed_by IS NOT NULL"
+    )
+    resgatados = int((await cur.fetchone())["c"])
+
+    cur = await _db.execute(
+        "SELECT COUNT(*) AS c FROM gift_cards WHERE redeemed_by IS NULL "
+        "AND (expires_at IS NULL OR expires_at > datetime('now'))"
+    )
+    livres = int((await cur.fetchone())["c"])
+
+    cur = await _db.execute(
+        "SELECT COUNT(*) AS c FROM gift_cards WHERE redeemed_by IS NULL "
+        "AND expires_at IS NOT NULL AND expires_at <= datetime('now')"
+    )
+    expirados = int((await cur.fetchone())["c"])
+
+    cur = await _db.execute(
+        "SELECT COALESCE(SUM(valor), 0) AS s FROM gift_cards WHERE tipo = 'saldo'"
+    )
+    valor_total = float((await cur.fetchone())["s"])
+
+    return {
+        "total": total, "livres": livres, "resgatados": resgatados,
+        "expirados": expirados, "valor_total": valor_total,
+    }
+
+
+async def admin_gift_create_full(
+    code_base: str, quantidade: int, tipo: str,
+    valor: float = 0, product_id: int | None = None,
+    discount_pct: float | None = None,
+    expires_days: int | None = None,
+) -> list[str]:
+    import secrets
+    import string
+
+    expires_at = None
+    if expires_days is not None:
+        expires_at = (datetime.now() + timedelta(days=expires_days)).strftime(
+            "%Y-%m-%d %H:%M:%S"
+        )
+
+    codigos = []
+    for _ in range(quantidade):
+        sufixo = "".join(
+            secrets.choice(string.ascii_uppercase + string.digits) for _ in range(6)
+        )
+        codigo = f"{code_base}-{sufixo}"
+        try:
+            await _db.execute(
+                "INSERT INTO gift_cards (code, tipo, valor, product_id, "
+                "discount_pct, expires_at) VALUES (?, ?, ?, ?, ?, ?)",
+                (codigo, tipo, valor, product_id, discount_pct, expires_at),
+            )
+            codigos.append(codigo)
+        except Exception:
+            continue
+
+    await _db.commit()
+    return codigos
+
+
+async def admin_gifts_v2_export_csv(filtro="todos") -> str:
+    where_sql, params = _gift_where(filtro)
+    sql = f"SELECT * FROM gift_cards {where_sql} ORDER BY created_at DESC"
+    cur = await _db.execute(sql, params)
+    rows = await cur.fetchall()
+
+    buf = _io.StringIO()
+    writer = _csv.writer(buf)
+    writer.writerow([
+        "code", "tipo", "valor", "discount_pct", "product_id",
+        "redeemed_by", "redeemed_at", "expires_at", "created_at",
+    ])
+    for r in rows:
+        writer.writerow([
+            r["code"], r["tipo"] or "", f"{float(r['valor'] or 0):.2f}",
+            f"{float(r['discount_pct'] or 0):.2f}" if "discount_pct" in r.keys() else "",
+            r["product_id"] or "",
+            r["redeemed_by"] or "",
+            r["redeemed_at"] or "",
+            r["expires_at"] if "expires_at" in r.keys() else "",
+            r["created_at"] or "",
+        ])
+    return buf.getvalue()
+
+
+async def admin_gifts_export_codes_txt(filtro="livres") -> str:
+    where_sql, params = _gift_where(filtro)
+    sql = f"SELECT code, tipo, valor FROM gift_cards {where_sql} ORDER BY created_at DESC"
+    cur = await _db.execute(sql, params)
+    rows = await cur.fetchall()
+
+    linhas = []
+    for r in rows:
+        tipo = r["tipo"] or "saldo"
+        valor = float(r["valor"] or 0)
+        if tipo == "saldo":
+            linhas.append(f"{r['code']} — R$ {valor:.2f}")
+        else:
+            linhas.append(f"{r['code']} — {tipo}")
+    return "\n".join(linhas)
+
+
+async def admin_gift_search(code: str):
+    cur = await _db.execute(
+        "SELECT * FROM gift_cards WHERE code LIKE ? LIMIT 20", (f"%{code}%",)
+    )
+    return [dict(r) for r in await cur.fetchall()]
+
+
+async def admin_gift_revoke(code: str) -> bool:
+    cur = await _db.execute("SELECT redeemed_by FROM gift_cards WHERE code = ?", (code,))
+    row = await cur.fetchone()
+    if not row or row["redeemed_by"]:
+        return False
+    await _db.execute("DELETE FROM gift_cards WHERE code = ?", (code,))
+    await _db.commit()
+    return True
+
+
+async def admin_gift_is_valid(code: str) -> tuple[bool, str]:
+    g = await get_gift(code)
+    if not g:
+        return False, "not_found"
+    if g.get("redeemed_by"):
+        return False, "already_used"
+    exp = g.get("expires_at") if "expires_at" in g.keys() else None
+    if exp:
+        try:
+            exp_dt = datetime.strptime(str(exp)[:19], "%Y-%m-%d %H:%M:%S")
+            if exp_dt < datetime.now():
+                return False, "expired"
+        except Exception:
+            pass
+    return True, "ok"
+
+
+# ═══════════════════════════════════════════════
+# ADMIN — TRANSMISSÃO (v2 - admin10)
+# ═══════════════════════════════════════════════
+async def bc_create(segmento: str, texto: str, midia_id=None,
+                    midia_tipo=None, botoes=None, created_by=None) -> str:
+    bc_id = str(uuid.uuid4())
+    await _db.execute(
+        "INSERT INTO bot_broadcasts (id, segmento, texto, midia_id, midia_tipo, "
+        "botoes_json, status, created_by) "
+        "VALUES (?, ?, ?, ?, ?, ?, 'draft', ?)",
+        (bc_id, segmento, texto, midia_id, midia_tipo,
+         _json.dumps(botoes or []), created_by),
+    )
+    await _db.commit()
+    return bc_id
+
+
+async def bc_get(bc_id: str):
+    cur = await _db.execute("SELECT * FROM bot_broadcasts WHERE id = ?", (bc_id,))
+    row = await cur.fetchone()
+    if not row:
+        return None
+    d = dict(row)
+    try:
+        d["botoes"] = _json.loads(d.get("botoes_json") or "[]")
+    except Exception:
+        d["botoes"] = []
+    return d
+
+
+async def bc_update(bc_id: str, **campos):
+    permitidos = {
+        "status", "agendado_para", "total_destinos",
+        "enviados", "falhas", "iniciado_em", "terminado_em",
+    }
+    sets, valores = [], []
+    for k, v in campos.items():
+        if k in permitidos:
+            sets.append(f"{k} = ?")
+            valores.append(v)
+    if not sets:
+        return
+    valores.append(bc_id)
+    await _db.execute(
+        f"UPDATE bot_broadcasts SET {', '.join(sets)} WHERE id = ?", valores
+    )
+    await _db.commit()
+
+
+async def bc_delete(bc_id: str):
+    await _db.execute("DELETE FROM bot_broadcasts WHERE id = ?", (bc_id,))
+    await _db.commit()
+
+
+async def bc_list(status=None, limit=10):
+    if status:
+        cur = await _db.execute(
+            "SELECT * FROM bot_broadcasts WHERE status = ? "
+            "ORDER BY created_at DESC LIMIT ?",
+            (status, limit),
+        )
+    else:
+        cur = await _db.execute(
+            "SELECT * FROM bot_broadcasts ORDER BY created_at DESC LIMIT ?",
+            (limit,),
+        )
+    return [dict(r) for r in await cur.fetchall()]
+
+
+async def bc_stats() -> dict:
+    cur = await _db.execute("SELECT COUNT(*) AS c FROM bot_broadcasts")
+    total = int((await cur.fetchone())["c"])
+
+    cur = await _db.execute(
+        "SELECT COUNT(*) AS c FROM bot_broadcasts WHERE status = 'scheduled'"
+    )
+    agendadas = int((await cur.fetchone())["c"])
+
+    cur = await _db.execute(
+        "SELECT COUNT(*) AS c FROM bot_broadcasts WHERE status = 'draft'"
+    )
+    rascunhos = int((await cur.fetchone())["c"])
+
+    cur = await _db.execute(
+        "SELECT COUNT(*) AS c FROM bot_broadcasts WHERE status = 'done'"
+    )
+    enviadas = int((await cur.fetchone())["c"])
+
+    cur = await _db.execute(
+        "SELECT COALESCE(SUM(enviados), 0) AS s FROM bot_broadcasts"
+    )
+    total_enviados = int((await cur.fetchone())["s"])
+
+    return {
+        "total": total, "agendadas": agendadas, "rascunhos": rascunhos,
+        "enviadas": enviadas, "total_enviados": total_enviados,
+    }
+
+
+async def bc_scheduled_due():
+    cur = await _db.execute(
+        "SELECT * FROM bot_broadcasts WHERE status = 'scheduled' "
+        "AND agendado_para <= datetime('now') ORDER BY agendado_para ASC LIMIT 5"
+    )
+    return [dict(r) for r in await cur.fetchall()]
+
+
+def bc_segment_user_ids(segmento: str):
+    if segmento == "todos":
+        return all_user_ids()
+    if segmento == "compradores":
+        return buyers_user_ids()
+    if segmento == "inativos":
+        return inactive_user_ids(7)
+    if segmento == "sem_saldo":
+        return _bc_sem_saldo_ids()
+    return all_user_ids()
+
+
+async def _bc_sem_saldo_ids():
+    cur = await _db.execute(
+        "SELECT user_id FROM users WHERE banned = 0 "
+        "AND (balance IS NULL OR balance <= 0)"
+    )
+    return [int(r["user_id"]) for r in await cur.fetchall()]
+
+
+# ═══════════════════════════════════════════════
+# ADMIN — ESTATÍSTICAS (v2 - admin11)
+# ═══════════════════════════════════════════════
+def _periodo_dates(periodo: str):
+    if periodo == "hoje":
+        return "DATE('now')", "DATE('now')"
+    if periodo == "7d":
+        return "DATE('now', '-7 days')", "DATE('now')"
+    if periodo == "30d":
+        return "DATE('now', '-30 days')", "DATE('now')"
+    if periodo == "mes":
+        return "DATE('now', 'start of month')", "DATE('now')"
+    if periodo == "mes_passado":
+        return (
+            "DATE('now', 'start of month', '-1 month')",
+            "DATE('now', 'start of month', '-1 day')",
+        )
+    return None, None
+
+
+async def admin_stats_v2(periodo: str = "30d") -> dict:
+    inicio, fim = _periodo_dates(periodo)
+    where = ""
+    params = []
+    if inicio and fim:
+        where = f"WHERE DATE(created_at) >= {inicio} AND DATE(created_at) <= {fim}"
+
+    cur = await _db.execute(
+        f"SELECT COUNT(*) AS c, COALESCE(SUM(total), 0) AS s, "
+        f"COALESCE(SUM(quantity), 0) AS q FROM purchases {where}",
+        params,
+    )
+    r = await cur.fetchone()
+    vendas_qtd = int(r["c"])
+    vendas_receita = float(r["s"])
+    vendas_itens = int(r["q"])
+
+    ticket = (vendas_receita / vendas_qtd) if vendas_qtd else 0.0
+
+    wd_where = (
+        f"WHERE DATE(created_at) >= {inicio} AND DATE(created_at) <= {fim} "
+        f"AND tipo = 'recarga' AND status = 'paid'"
+        if inicio else "WHERE tipo = 'recarga' AND status = 'paid'"
+    )
+    cur = await _db.execute(
+        f"SELECT COUNT(*) AS c, COALESCE(SUM(valor), 0) AS s FROM pix_pending {wd_where}",
+        [],
+    )
+    r = await cur.fetchone()
+    recargas_qtd = int(r["c"])
+    recargas_valor = float(r["s"])
+
+    sw_where = (
+        f"WHERE DATE(created_at) >= {inicio} AND DATE(created_at) <= {fim} "
+        f"AND status = 'processed'"
+        if inicio else "WHERE status = 'processed'"
+    )
+    cur = await _db.execute(
+        f"SELECT COUNT(*) AS c, COALESCE(SUM(amount), 0) AS s FROM withdrawals {sw_where}",
+        [],
+    )
+    r = await cur.fetchone()
+    saques_qtd = int(r["c"])
+    saques_valor = float(r["s"])
+
+    if inicio:
+        cur = await _db.execute(
+            f"SELECT COUNT(*) AS c FROM users WHERE DATE(created_at) >= {inicio} "
+            f"AND DATE(created_at) <= {fim}",
+        )
+    else:
+        cur = await _db.execute("SELECT COUNT(*) AS c FROM users")
+    novos_users = int((await cur.fetchone())["c"])
+
+    return {
+        "vendas_qtd": vendas_qtd,
+        "vendas_receita": vendas_receita,
+        "vendas_itens": vendas_itens,
+        "ticket_medio": ticket,
+        "recargas_qtd": recargas_qtd,
+        "recargas_valor": recargas_valor,
+        "saques_qtd": saques_qtd,
+        "saques_valor": saques_valor,
+        "novos_users": novos_users,
+        "periodo": periodo,
+    }
+
+
+async def admin_stats_comparativo() -> dict:
+    mes_atual = await admin_stats_v2("mes")
+    mes_ant = await admin_stats_v2("mes_passado")
+
+    def calc_pct(atual, anterior):
+        if anterior <= 0:
+            return 100.0 if atual > 0 else 0.0
+        return ((atual - anterior) / anterior) * 100
+
+    return {
+        "atual": mes_atual,
+        "anterior": mes_ant,
+        "pct_receita": calc_pct(mes_atual["vendas_receita"], mes_ant["vendas_receita"]),
+        "pct_vendas": calc_pct(mes_atual["vendas_qtd"], mes_ant["vendas_qtd"]),
+        "pct_users": calc_pct(mes_atual["novos_users"], mes_ant["novos_users"]),
+        "pct_recargas": calc_pct(mes_atual["recargas_valor"], mes_ant["recargas_valor"]),
+    }
+
+
+async def admin_stats_por_dia(dias: int = 7):
+    cur = await _db.execute(
+        f"""
+        SELECT DATE(created_at) AS dia,
+               COUNT(*) AS vendas,
+               COALESCE(SUM(total), 0) AS receita
+        FROM purchases
+        WHERE DATE(created_at) >= DATE('now', '-{dias} days')
+        GROUP BY DATE(created_at)
+        ORDER BY dia ASC
+        """,
+    )
+    return [dict(r) for r in await cur.fetchall()]
+
+
+async def admin_top_produtos_v2(periodo: str = "30d", limit: int = 10):
+    inicio, fim = _periodo_dates(periodo)
+    where = ""
+    if inicio:
+        where = f"WHERE DATE(created_at) >= {inicio} AND DATE(created_at) <= {fim}"
+
+    cur = await _db.execute(
+        f"""
+        SELECT product_name,
+               COALESCE(SUM(quantity), 0) AS qtd,
+               COALESCE(SUM(total), 0) AS receita,
+               COUNT(*) AS pedidos
+        FROM purchases {where}
+        GROUP BY product_name
+        ORDER BY receita DESC LIMIT ?
+        """,
+        (limit,),
+    )
+    return [dict(r) for r in await cur.fetchall()]
+
+
+async def admin_top_compradores_v2(periodo: str = "30d", limit: int = 10):
+    inicio, fim = _periodo_dates(periodo)
+    where = ""
+    if inicio:
+        where = f"WHERE DATE(p.created_at) >= {inicio} AND DATE(p.created_at) <= {fim}"
+
+    cur = await _db.execute(
+        f"""
+        SELECT u.user_id, u.first_name, u.username,
+               COUNT(p.id) AS compras,
+               COALESCE(SUM(p.total), 0) AS total
+        FROM users u
+        JOIN purchases p ON p.user_id = u.user_id
+        {where}
+        GROUP BY u.user_id
+        ORDER BY total DESC LIMIT ?
+        """,
+        (limit,),
+    )
+    return [dict(r) for r in await cur.fetchall()]
+
+
+async def admin_top_recargas_v2(periodo: str = "30d", limit: int = 10):
+    inicio, fim = _periodo_dates(periodo)
+    where = ""
+    if inicio:
+        where = (
+            f"WHERE DATE(px.created_at) >= {inicio} "
+            f"AND DATE(px.created_at) <= {fim} "
+            f"AND px.tipo = 'recarga' AND px.status = 'paid'"
+        )
+    else:
+        where = "WHERE px.tipo = 'recarga' AND px.status = 'paid'"
+
+    cur = await _db.execute(
+        f"""
+        SELECT u.user_id, u.first_name, u.username,
+               COUNT(px.id) AS recargas,
+               COALESCE(SUM(px.valor), 0) AS total
+        FROM users u
+        JOIN pix_pending px ON px.user_id = u.user_id
+        {where}
+        GROUP BY u.user_id
+        ORDER BY total DESC LIMIT ?
+        """,
+        (limit,),
+    )
+    return [dict(r) for r in await cur.fetchall()]
+
+
+async def admin_top_gifts_v2(limit: int = 10):
+    cur = await _db.execute(
+        """
+        SELECT u.user_id, u.first_name, u.username,
+               COUNT(g.code) AS gifts,
+               COALESCE(SUM(g.valor), 0) AS total
+        FROM users u
+        JOIN gift_cards g ON g.redeemed_by = u.user_id
+        GROUP BY u.user_id
+        ORDER BY total DESC LIMIT ?
+        """,
+        (limit,),
+    )
+    return [dict(r) for r in await cur.fetchall()]
+
+
+async def admin_stats_conversao() -> dict:
+    cur = await _db.execute("SELECT COUNT(DISTINCT user_id) AS c FROM cart_views")
+    visualizou = int((await cur.fetchone())["c"])
+
+    cur = await _db.execute("SELECT COUNT(DISTINCT user_id) AS c FROM purchases")
+    comprou = int((await cur.fetchone())["c"])
+
+    cur = await _db.execute("SELECT COUNT(*) AS c FROM users")
+    total_users = int((await cur.fetchone())["c"])
+
+    taxa = (comprou / visualizou * 100) if visualizou else 0
+    taxa_geral = (comprou / total_users * 100) if total_users else 0
+
+    return {
+        "visualizou": visualizou,
+        "comprou": comprou,
+        "total_users": total_users,
+        "taxa": taxa,
+        "taxa_geral": taxa_geral,
+    }
+
+
+async def admin_stats_saldos() -> dict:
+    cur = await _db.execute(
+        "SELECT COALESCE(SUM(balance), 0) AS bot, "
+        "COALESCE(SUM(balance_web), 0) AS web FROM users"
+    )
+    r = await cur.fetchone()
+
+    cur = await _db.execute(
+        "SELECT COALESCE(SUM(amount), 0) AS s FROM withdrawals WHERE status = 'pending'"
+    )
+    pendentes = float((await cur.fetchone())["s"])
+
+    cur = await _db.execute(
+        "SELECT COALESCE(SUM(valor), 0) AS s FROM gift_cards "
+        "WHERE redeemed_by IS NULL AND tipo = 'saldo'"
+    )
+    gifts_livres = float((await cur.fetchone())["s"])
+
+    return {
+        "bot": float(r["bot"]),
+        "web": float(r["web"]),
+        "saques_pendentes": pendentes,
+        "gifts_livres": gifts_livres,
+    }
+
+
+async def admin_stats_export_csv(periodo: str = "30d") -> str:
+    stats = await admin_stats_v2(periodo)
+    produtos = await admin_top_produtos_v2(periodo, limit=50)
+    compradores = await admin_top_compradores_v2(periodo, limit=50)
+
+    buf = _io.StringIO()
+    writer = _csv.writer(buf)
+
+    writer.writerow(["# RESUMO"])
+    writer.writerow(["Período", periodo])
+    writer.writerow(["Vendas (qtd)", stats["vendas_qtd"]])
+    writer.writerow(["Receita (R$)", f"{stats['vendas_receita']:.2f}"])
+    writer.writerow(["Itens vendidos", stats["vendas_itens"]])
+    writer.writerow(["Ticket médio (R$)", f"{stats['ticket_medio']:.2f}"])
+    writer.writerow(["Recargas (qtd)", stats["recargas_qtd"]])
+    writer.writerow(["Recargas (R$)", f"{stats['recargas_valor']:.2f}"])
+    writer.writerow(["Saques (qtd)", stats["saques_qtd"]])
+    writer.writerow(["Saques (R$)", f"{stats['saques_valor']:.2f}"])
+    writer.writerow(["Novos usuários", stats["novos_users"]])
+
+    writer.writerow([])
+    writer.writerow(["# TOP PRODUTOS"])
+    writer.writerow(["Produto", "Qtd", "Receita", "Pedidos"])
+    for p in produtos:
+        writer.writerow([
+            p["product_name"], p["qtd"],
+            f"{float(p['receita']):.2f}", p["pedidos"],
+        ])
+
+    writer.writerow([])
+    writer.writerow(["# TOP COMPRADORES"])
+    writer.writerow(["user_id", "nome", "username", "compras", "total"])
+    for c in compradores:
+        writer.writerow([
+            c["user_id"], c.get("first_name") or "",
+            c.get("username") or "", c["compras"],
+            f"{float(c['total']):.2f}",
+        ])
+
+    return buf.getvalue()
+
+
+# ═══════════════════════════════════════════════
+# ADMIN — CONFIG/TEXTOS/BOTÕES (v2 - admin12)
+# ═══════════════════════════════════════════════
+DEFAULT_CONFIGS = {
+    "store_name":     "Minha Loja",
+    "cnpj":           "00.000.000/0000-00",
+    "horario":        "Seg a Sex, 09h às 18h",
+    "whatsapp_link":  "https://wa.me/",
+    "telegram_link":  "https://t.me/",
+    "bonus_rate":     "10",
+    "topup_min":      "4.00",
+    "withdraw_min":   "20.00",
+    "commission":     "20",
+    "maintenance":    "0",
+}
+
+DEFAULT_TEXTS = {
+    "gate": "❗ <b>Para utilizar nosso serviço é obrigatório que você entre no nosso grupo.</b>",
+    "welcome": (
+        "📡 <b>Bem-vindo à {store_name}!</b>\n"
+        "✨ A sua central de streamings com entrega 100% automática.\n"
+        "Pagou, recebeu. Sem filas, sem precisar falar com atendente, 24 horas por dia! ⚡\n\n"
+        "🛡 <b>Segurança e Suporte:</b>\n"
+        "Mais de 12.000 clientes já passaram por aqui.\n"
+        "Participe da nossa comunidade e veja as referências\n\n"
+        "● <b>Seus Dados:</b>\n"
+        "├ 👤 ID: <code>{user_id}</code>\n"
+        "└ 💰 Saldo Atual: <b>R$ {balance:.2f}</b>\n\n"
+        "👇 <b>COMO COMEÇAR:</b>\n"
+        "Clique no botão \"🛍 Comprar Produtos\" abaixo para ver nosso catálogo e escolher sua tela!"
+    ),
+    "catalog": (
+        "⚡ <b>{store_name} | Catálogo de Serviços</b>\n"
+        "────────────────────────\n"
+        "💰 | Saldo da Carteira: <b>R$ {balance:.2f}</b>\n\n"
+        "⬇️ Selecione uma categoria abaixo para ver nossos planos:"
+    ),
+    "about": (
+        "🤖 <b>Sobre o Bot</b>\n\n"
+        "{store_name} — central de streamings com entrega automática.\n"
+        "Pagou, recebeu. 24h por dia.\n\n"
+        "Para suporte, use o botão 📩 Atendimento."
+    ),
+}
+
+DEFAULT_BUTTONS = {
+    "btn_catalog":         "🛍 Comprar Produtos",
+    "btn_store":           "🛒 Abrir Loja",
+    "btn_profile":         "👤 Meu Perfil",
+    "btn_topup":           "💠 Recarregar Saldo",
+    "btn_affiliates":      "👥 Afiliados",
+    "btn_top":             "🏆 Top Compradores",
+    "btn_support":         "📩 Atendimento",
+    "btn_about":           "🤖 Sobre o Bot",
+    "btn_search":          "🔎 Pesquisar Serviços",
+    "btn_back":            "⬅️ VOLTAR",
+    "btn_back_to_profile": "⬅️ VOLTAR",
+    "btn_buy":             "🛒 COMPRAR",
+    "btn_buymulti":        "🛒 Comprar mais de um",
+    "btn_gift_cancel":     "❌ Cancelar",
+    "btn_gift_use":        "🎁 Usar",
+}
+
+
+async def admin_configs_all() -> dict:
+    cur = await _db.execute("SELECT key, value FROM config ORDER BY key ASC")
+    rows = await cur.fetchall()
+    return {r["key"]: r["value"] for r in rows}
+
+
+async def admin_config_delete(key: str):
+    await _db.execute("DELETE FROM config WHERE key = ?", (key,))
+    await _db.commit()
+
+
+async def admin_config_reset(key: str):
+    if key in DEFAULT_CONFIGS:
+        await set_config(key, DEFAULT_CONFIGS[key])
+    else:
+        await admin_config_delete(key)
+
+
+async def admin_texts_all():
+    cur = await _db.execute("SELECT key, value, updated_at FROM bot_texts ORDER BY key ASC")
+    return [dict(r) for r in await cur.fetchall()]
+
+
+async def admin_text_reset(key: str) -> bool:
+    if key not in DEFAULT_TEXTS:
+        return False
+    await _db.execute(
+        "UPDATE bot_texts SET value = ?, updated_at = CURRENT_TIMESTAMP WHERE key = ?",
+        (DEFAULT_TEXTS[key], key),
+    )
+    await _db.commit()
+    return True
+
+
+async def admin_buttons_all():
+    cur = await _db.execute("SELECT key, value, updated_at FROM bot_buttons ORDER BY key ASC")
+    return [dict(r) for r in await cur.fetchall()]
+
+
+async def admin_button_reset(key: str) -> bool:
+    if key not in DEFAULT_BUTTONS:
+        return False
+    await _db.execute(
+        "UPDATE bot_buttons SET value = ?, updated_at = CURRENT_TIMESTAMP WHERE key = ?",
+        (DEFAULT_BUTTONS[key], key),
+    )
+    await _db.commit()
+    return True
+
+
+async def admin_texts_search(term: str):
+    cur = await _db.execute(
+        "SELECT key, value FROM bot_texts "
+        "WHERE LOWER(key) LIKE ? OR LOWER(value) LIKE ? ORDER BY key ASC LIMIT 20",
+        (f"%{term.lower()}%", f"%{term.lower()}%"),
+    )
+    return [dict(r) for r in await cur.fetchall()]
+
+
+async def admin_buttons_search(term: str):
+    cur = await _db.execute(
+        "SELECT key, value FROM bot_buttons "
+        "WHERE LOWER(key) LIKE ? OR LOWER(value) LIKE ? ORDER BY key ASC LIMIT 20",
+        (f"%{term.lower()}%", f"%{term.lower()}%"),
+    )
+    return [dict(r) for r in await cur.fetchall()]
+
+
+async def admin_configs_export() -> str:
+    cfg = await admin_configs_all()
+    cur = await _db.execute("SELECT key, value FROM bot_texts")
+    texts = {r["key"]: r["value"] for r in await cur.fetchall()}
+    cur = await _db.execute("SELECT key, value FROM bot_buttons")
+    buttons = {r["key"]: r["value"] for r in await cur.fetchall()}
+
+    data = {"config": cfg, "texts": texts, "buttons": buttons}
+    return _json.dumps(data, ensure_ascii=False, indent=2)
+
+
+async def admin_configs_import(data: dict) -> dict:
+    resumo = {"config": 0, "texts": 0, "buttons": 0}
+
+    for k, v in (data.get("config") or {}).items():
+        await set_config(k, str(v))
+        resumo["config"] += 1
+
+    for k, v in (data.get("texts") or {}).items():
+        await save_bot_text(k, str(v))
+        resumo["texts"] += 1
+
+    for k, v in (data.get("buttons") or {}).items():
+        await save_bot_button(k, str(v))
+        resumo["buttons"] += 1
+
+    return resumo
+
+
+# ═══════════════════════════════════════════════
+# ADMIN — SUB-ADMINS (v2 - admin13)
+# ═══════════════════════════════════════════════
+PERMISSOES_DISPONIVEIS = (
+    "users", "products", "purchases", "gifts",
+    "withdrawals", "affiliates", "broadcast", "config",
+)
+
+
+async def admin_sub_v2_list(filtro: str = "todos"):
+    if filtro == "ativos":
+        cur = await _db.execute(
+            "SELECT * FROM sub_admins WHERE expires_at IS NULL "
+            "OR expires_at > datetime('now') ORDER BY created_at DESC"
+        )
+    elif filtro == "expirados":
+        cur = await _db.execute(
+            "SELECT * FROM sub_admins WHERE expires_at IS NOT NULL "
+            "AND expires_at <= datetime('now') ORDER BY created_at DESC"
+        )
+    else:
+        cur = await _db.execute(
+            "SELECT * FROM sub_admins ORDER BY created_at DESC"
+        )
+    return [dict(r) for r in await cur.fetchall()]
+
+
+async def admin_sub_v2_stats() -> dict:
+    cur = await _db.execute("SELECT COUNT(*) AS c FROM sub_admins")
+    total = int((await cur.fetchone())["c"])
+
+    cur = await _db.execute(
+        "SELECT COUNT(*) AS c FROM sub_admins WHERE expires_at IS NULL "
+        "OR expires_at > datetime('now')"
+    )
+    ativos = int((await cur.fetchone())["c"])
+
+    cur = await _db.execute(
+        "SELECT COUNT(*) AS c FROM sub_admins WHERE expires_at IS NOT NULL "
+        "AND expires_at <= datetime('now')"
+    )
+    expirados = int((await cur.fetchone())["c"])
+
+    return {"total": total, "ativos": ativos, "expirados": expirados}
+
+
+async def admin_sub_add_full(user_id: int, nome: str, permissoes: str = "all",
+                              expires_days: int | None = None,
+                              created_by: int | None = None):
+    expires = None
+    if expires_days is not None:
+        expires = (datetime.now() + timedelta(days=expires_days)).strftime(
+            "%Y-%m-%d %H:%M:%S"
+        )
+
+    await _db.execute(
+        "INSERT INTO sub_admins (user_id, nome, permissoes, expires_at, created_by) "
+        "VALUES (?, ?, ?, ?, ?) "
+        "ON CONFLICT(user_id) DO UPDATE SET nome = ?, permissoes = ?, "
+        "expires_at = ?, created_by = ?",
+        (user_id, nome, permissoes, expires, created_by,
+         nome, permissoes, expires, created_by),
+    )
+    await _db.commit()
+
+
+async def admin_sub_get_full(user_id: int):
+    cur = await _db.execute("SELECT * FROM sub_admins WHERE user_id = ?", (user_id,))
+    row = await cur.fetchone()
+    return dict(row) if row else None
+
+
+async def admin_sub_set_expira(user_id: int, dias: int | None):
+    if dias is None:
+        await _db.execute(
+            "UPDATE sub_admins SET expires_at = NULL WHERE user_id = ?", (user_id,)
+        )
+    else:
+        expires = (datetime.now() + timedelta(days=dias)).strftime("%Y-%m-%d %H:%M:%S")
+        await _db.execute(
+            "UPDATE sub_admins SET expires_at = ? WHERE user_id = ?",
+            (expires, user_id),
+        )
+    await _db.commit()
+
+
+async def admin_sub_remove_full(user_id: int):
+    await _db.execute("DELETE FROM sub_admins WHERE user_id = ?", (user_id,))
+    await _db.commit()
+
+
+async def admin_sub_check_expired():
+    try:
+        cur = await _db.execute(
+            "SELECT user_id FROM sub_admins WHERE expires_at IS NOT NULL "
+            "AND expires_at <= datetime('now')"
+        )
+        rows = await cur.fetchall()
+        for r in rows:
+            await _db.execute(
+                "DELETE FROM sub_admins WHERE user_id = ?", (r["user_id"],)
+            )
+        if rows:
+            await _db.commit()
+        return [int(r["user_id"]) for r in rows]
+    except Exception:
+        return []
+
+
+async def sub_log_action(admin_id: int, action: str, target: str = "", details: str = ""):
+    await _db.execute(
+        "INSERT INTO sub_admin_logs (admin_id, action, target, details) "
+        "VALUES (?, ?, ?, ?)",
+        (admin_id, action, target, details),
+    )
+    await _db.commit()
+
+
+async def sub_list_logs(admin_id: int | None = None, limit: int = 30):
+    if admin_id:
+        cur = await _db.execute(
+            "SELECT * FROM sub_admin_logs WHERE admin_id = ? "
+            "ORDER BY created_at DESC LIMIT ?",
+            (admin_id, limit),
+        )
+    else:
+        cur = await _db.execute(
+            "SELECT * FROM sub_admin_logs ORDER BY created_at DESC LIMIT ?",
+            (limit,),
+        )
+    return [dict(r) for r in await cur.fetchall()]
+
+
+async def sub_count_actions(admin_id: int) -> int:
+    cur = await _db.execute(
+        "SELECT COUNT(*) AS c FROM sub_admin_logs WHERE admin_id = ?", (admin_id,)
+    )
+    return int((await cur.fetchone())["c"])
+
+
+async def sub_stats_por_acao(admin_id: int) -> list[dict]:
+    cur = await _db.execute(
+        "SELECT action, COUNT(*) AS total FROM sub_admin_logs "
+        "WHERE admin_id = ? GROUP BY action ORDER BY total DESC LIMIT 10",
+        (admin_id,),
+    )
+    return [dict(r) for r in await cur.fetchall()]
+
+
+# ═══════════════════════════════════════════════
+# ADMIN — CARRINHOS ABANDONADOS (v2 - admin14)
+# ═══════════════════════════════════════════════
+def _cart_where(tempo: str = "todos"):
+    if tempo == "5min":
+        return "AND c.viewed_at <= datetime('now', '-5 minutes')"
+    if tempo == "1h":
+        return "AND c.viewed_at <= datetime('now', '-1 hour')"
+    if tempo == "24h":
+        return "AND c.viewed_at <= datetime('now', '-1 day')"
+    if tempo == "7d":
+        return "AND c.viewed_at <= datetime('now', '-7 days')"
+    return ""
+
+
+async def admin_carts_v2_list(tempo="todos", limit=8, offset=0):
+    extra_where = _cart_where(tempo)
+    sql = f"""
+        SELECT c.user_id, c.product_id, c.viewed_at, c.notified,
+               c.reminders_sent, c.converted,
+               u.first_name, u.username,
+               p.name AS product_name, p.price AS product_price
+        FROM cart_views c
+        LEFT JOIN users u ON u.user_id = c.user_id
+        LEFT JOIN products p ON p.id = c.product_id
+        WHERE c.notified = 0 AND c.converted = 0 {extra_where}
+        ORDER BY c.viewed_at DESC LIMIT ? OFFSET ?
+    """
+    cur = await _db.execute(sql, (limit, offset))
+    return [dict(r) for r in await cur.fetchall()]
+
+
+async def admin_carts_v2_count(tempo="todos") -> int:
+    extra_where = _cart_where(tempo)
+    sql = (
+        f"SELECT COUNT(*) AS c FROM cart_views c "
+        f"WHERE c.notified = 0 AND c.converted = 0 {extra_where}"
+    )
+    cur = await _db.execute(sql)
+    return int((await cur.fetchone())["c"])
+
+
+async def admin_carts_v2_stats() -> dict:
+    cur = await _db.execute(
+        "SELECT COUNT(*) AS c FROM cart_views WHERE notified = 0 AND converted = 0"
+    )
+    total = int((await cur.fetchone())["c"])
+
+    cur = await _db.execute(
+        "SELECT COUNT(*) AS c FROM cart_views WHERE notified = 0 AND converted = 0 "
+        "AND DATE(viewed_at) = DATE('now')"
+    )
+    hoje = int((await cur.fetchone())["c"])
+
+    cur = await _db.execute(
+        "SELECT COUNT(*) AS c FROM cart_views WHERE notified = 0 AND converted = 0 "
+        "AND viewed_at >= datetime('now', '-7 days')"
+    )
+    ultimos_7d = int((await cur.fetchone())["c"])
+
+    cur = await _db.execute(
+        """
+        SELECT COALESCE(SUM(p.price), 0) AS s
+        FROM cart_views c
+        LEFT JOIN products p ON p.id = c.product_id
+        WHERE c.notified = 0 AND c.converted = 0
+        """
+    )
+    valor_risco = float((await cur.fetchone())["s"])
+
+    cur = await _db.execute("SELECT COUNT(*) AS c FROM cart_views WHERE converted = 1")
+    convertidos = int((await cur.fetchone())["c"])
+
+    return {
+        "total": total,
+        "hoje": hoje,
+        "ultimos_7d": ultimos_7d,
+        "valor_risco": valor_risco,
+        "convertidos": convertidos,
+    }
+
+
+async def admin_carts_v2_mark_converted(user_id: int, product_id: int):
+    await _db.execute(
+        "UPDATE cart_views SET converted = 1 "
+        "WHERE user_id = ? AND product_id = ?",
+        (user_id, product_id),
+    )
+    await _db.commit()
+
+
+async def admin_carts_v2_increment_reminder(user_id: int, product_id: int):
+    await _db.execute(
+        "UPDATE cart_views SET reminders_sent = COALESCE(reminders_sent, 0) + 1 "
+        "WHERE user_id = ? AND product_id = ?",
+        (user_id, product_id),
+    )
+    await _db.commit()
+
+
+async def admin_carts_v2_export_csv() -> str:
+    cur = await _db.execute(
+        """
+        SELECT c.user_id, u.first_name, u.username,
+               c.product_id, p.name AS product_name, p.price AS product_price,
+               c.viewed_at, c.reminders_sent
+        FROM cart_views c
+        LEFT JOIN users u ON u.user_id = c.user_id
+        LEFT JOIN products p ON p.id = c.product_id
+        WHERE c.notified = 0 AND c.converted = 0
+        ORDER BY c.viewed_at DESC
+        """
+    )
+    rows = await cur.fetchall()
+
+    buf = _io.StringIO()
+    writer = _csv.writer(buf)
+    writer.writerow([
+        "user_id", "nome", "username", "product_id", "produto",
+        "preco", "viewed_at", "reminders_sent",
+    ])
+    for r in rows:
+        writer.writerow([
+            r["user_id"], r["first_name"] or "", r["username"] or "",
+            r["product_id"], r["product_name"] or "",
+            f"{float(r['product_price'] or 0):.2f}",
+            r["viewed_at"] or "", r["reminders_sent"] or 0,
+        ])
+    return buf.getvalue()
+
+
+# ═══════════════════════════════════════════════
+# ADMIN — EXTRAS (v2 - admin15)
+# ═══════════════════════════════════════════════
+async def backup_register(filename: str, tamanho: int, created_by: int | None = None):
+    await _db.execute(
+        "INSERT INTO backups_history (filename, tamanho, created_by) "
+        "VALUES (?, ?, ?)",
+        (filename, tamanho, created_by),
+    )
+    await _db.commit()
+
+
+async def backup_list(limit: int = 15):
+    cur = await _db.execute(
+        "SELECT * FROM backups_history ORDER BY created_at DESC LIMIT ?", (limit,)
+    )
+    return [dict(r) for r in await cur.fetchall()]
+
+
+async def backup_last():
+    cur = await _db.execute(
+        "SELECT * FROM backups_history ORDER BY created_at DESC LIMIT 1"
+    )
+    row = await cur.fetchone()
+    return dict(row) if row else None
+
+
+async def logs_v2_filter(admin_id: int | None = None, action: str | None = None,
+                         periodo: str = "todos", limit: int = 25, offset: int = 0):
+    wheres = []
+    params = []
+
+    if admin_id:
+        wheres.append("admin_id = ?")
+        params.append(admin_id)
+
+    if action:
+        wheres.append("action LIKE ?")
+        params.append(f"%{action}%")
+
+    if periodo == "hoje":
+        wheres.append("DATE(created_at) = DATE('now')")
+    elif periodo == "7d":
+        wheres.append("created_at >= datetime('now', '-7 days')")
+    elif periodo == "30d":
+        wheres.append("created_at >= datetime('now', '-30 days')")
+
+    where_sql = ("WHERE " + " AND ".join(wheres)) if wheres else ""
+    sql = f"SELECT * FROM admin_logs {where_sql} ORDER BY created_at DESC LIMIT ? OFFSET ?"
+    cur = await _db.execute(sql, (*params, limit, offset))
+    return [dict(r) for r in await cur.fetchall()]
+
+
+async def logs_v2_count(admin_id: int | None = None, action: str | None = None,
+                        periodo: str = "todos") -> int:
+    wheres = []
+    params = []
+
+    if admin_id:
+        wheres.append("admin_id = ?")
+        params.append(admin_id)
+
+    if action:
+        wheres.append("action LIKE ?")
+        params.append(f"%{action}%")
+
+    if periodo == "hoje":
+        wheres.append("DATE(created_at) = DATE('now')")
+    elif periodo == "7d":
+        wheres.append("created_at >= datetime('now', '-7 days')")
+    elif periodo == "30d":
+        wheres.append("created_at >= datetime('now', '-30 days')")
+
+    where_sql = ("WHERE " + " AND ".join(wheres)) if wheres else ""
+    cur = await _db.execute(
+        f"SELECT COUNT(*) AS c FROM admin_logs {where_sql}", params
+    )
+    return int((await cur.fetchone())["c"])
+
+
+async def logs_v2_stats() -> dict:
+    cur = await _db.execute("SELECT COUNT(*) AS c FROM admin_logs")
+    total = int((await cur.fetchone())["c"])
+
+    cur = await _db.execute(
+        "SELECT COUNT(*) AS c FROM admin_logs WHERE DATE(created_at) = DATE('now')"
+    )
+    hoje = int((await cur.fetchone())["c"])
+
+    cur = await _db.execute(
+        "SELECT admin_id, COUNT(*) AS c FROM admin_logs "
+        "GROUP BY admin_id ORDER BY c DESC LIMIT 5"
+    )
+    top_admins = [dict(r) for r in await cur.fetchall()]
+
+    cur = await _db.execute(
+        "SELECT action, COUNT(*) AS c FROM admin_logs "
+        "GROUP BY action ORDER BY c DESC LIMIT 5"
+    )
+    top_actions = [dict(r) for r in await cur.fetchall()]
+
+    return {
+        "total": total, "hoje": hoje,
+        "top_admins": top_admins,
+        "top_actions": top_actions,
+    }
+
+
+async def logs_v2_export_csv() -> str:
+    cur = await _db.execute(
+        "SELECT * FROM admin_logs ORDER BY created_at DESC LIMIT 5000"
+    )
+    rows = await cur.fetchall()
+
+    buf = _io.StringIO()
+    writer = _csv.writer(buf)
+    writer.writerow(["id", "admin_id", "action", "target", "details", "created_at"])
+    for r in rows:
+        writer.writerow([
+            r["id"], r["admin_id"], r["action"] or "",
+            r["target"] or "", r["details"] or "",
+            r["created_at"] or "",
+        ])
+    return buf.getvalue()
+
+
+async def system_info() -> dict:
+    import os
+    import sys
+    import platform
+
+    try:
+        tamanho_db = os.path.getsize(DB_PATH)
+    except Exception:
+        tamanho_db = 0
+
+    cur = await _db.execute("SELECT COUNT(*) AS c FROM users")
+    users = int((await cur.fetchone())["c"])
+
+    cur = await _db.execute("SELECT COUNT(*) AS c FROM purchases")
+    compras = int((await cur.fetchone())["c"])
+
+    cur = await _db.execute("SELECT COUNT(*) AS c FROM products")
+    produtos = int((await cur.fetchone())["c"])
+
+    cur = await _db.execute("SELECT COUNT(*) AS c FROM stock_items")
+    estoque = int((await cur.fetchone())["c"])
+
+    return {
+        "python": f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}",
+        "plataforma": platform.platform()[:60],
+        "tamanho_db_mb": tamanho_db / (1024 * 1024),
+        "tamanho_db_bytes": tamanho_db,
+        "users": users,
+        "compras": compras,
+        "produtos": produtos,
+        "estoque": estoque,
+    }
+
+
+async def maintenance_set_agendada(minutos: int | None):
+    if minutos is None:
+        await set_config("maintenance_sched", "")
+        return
+
+    quando = (datetime.now() + timedelta(minutes=minutos)).strftime("%Y-%m-%d %H:%M:%S")
+    await set_config("maintenance_sched", quando)
+
+
+async def maintenance_get_agendada() -> str:
+    return await get_config("maintenance_sched", "")
+
+
+async def maintenance_check_agendada() -> bool:
+    agendada = await get_config("maintenance_sched", "")
+    if not agendada:
+        return False
+
+    try:
+        quando = datetime.strptime(agendada[:19], "%Y-%m-%d %H:%M:%S")
+        if quando <= datetime.now():
+            await set_config("maintenance", "1")
+            await set_config("maintenance_sched", "")
+            return True
+    except Exception:
+        pass
+    return False
 
 
 # ═══════════════════════════════════════════════
