@@ -1,8 +1,17 @@
 """
-Módulo ADMIN — ESTATÍSTICAS (v2 — completo).
+Módulo ADMIN — ESTATÍSTICAS v2 (completo).
+
+Funcionalidades:
+  • Dashboard completo com filtros de período
+  • Comparativo mês atual vs anterior (com %)
+  • Gráfico de barras em texto (vendas por dia)
+  • Top 10 produtos / compradores / recargas / gifts
+  • Taxa de conversão (funil)
+  • Saldos em circulação + pendências
+  • Exportar relatório CSV
 """
-import logging
 import io
+import logging
 from datetime import datetime
 from telegram import Update, InputFile
 from telegram.constants import ParseMode
@@ -15,12 +24,12 @@ from keyboards import menus
 logger = logging.getLogger(__name__)
 
 PERIODO_LABEL = {
-    "hoje": "Hoje",
-    "7d": "Últimos 7 dias",
-    "30d": "Últimos 30 dias",
-    "mes": "Este mês",
+    "hoje":        "Hoje",
+    "7d":          "Últimos 7 dias",
+    "30d":         "Últimos 30 dias",
+    "mes":         "Este mês",
     "mes_passado": "Mês passado",
-    "tudo": "Todo o período",
+    "tudo":        "Todo o período",
 }
 
 
@@ -32,7 +41,10 @@ async def _edit_or_send(query, text: str, kb=None):
     try:
         await query.edit_message_text(text, reply_markup=kb, parse_mode=ParseMode.HTML)
     except Exception:
-        await query.message.reply_text(text, reply_markup=kb, parse_mode=ParseMode.HTML)
+        try:
+            await query.message.reply_text(text, reply_markup=kb, parse_mode=ParseMode.HTML)
+        except Exception:
+            pass
 
 
 def _barra(valor: float, maximo: float, largura: int = 12) -> str:
@@ -376,7 +388,6 @@ async def admin_stats_v2_saldos_cb(update: Update, context: ContextTypes.DEFAULT
         return
 
     saldos = await db.admin_stats_saldos()
-
     total = saldos["bot"] + saldos["web"]
 
     texto = (
