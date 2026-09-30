@@ -1,4 +1,4 @@
-from telegram import Update, ForceReply
+from telegram import Update
 from telegram.constants import ParseMode
 from telegram.ext import ContextTypes
 
@@ -7,15 +7,15 @@ from keyboards import menus
 from texts import messages
 
 
+# ═══════════════════════════════════════════════
+# 🎁 ABRIR RESGATE DE GIFT CARD (sem ForceReply)
+# ═══════════════════════════════════════════════
 async def gift_open(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Ao clicar em Resgatar Gift Card → EDITA a msg atual com ForceReply."""
     query = update.callback_query
     await query.answer()
 
     context.user_data["awaiting_gift"] = True
 
-    # ForceReply em mensagem editada não funciona 100% em alguns clientes,
-    # então ENVIAMOS uma nova mensagem curta com ForceReply e editamos a anterior.
     try:
         await query.edit_message_text(
             messages.gift_prompt_text(),
@@ -25,13 +25,10 @@ async def gift_open(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception:
         pass
 
-    await context.bot.send_message(
-        chat_id=query.message.chat_id,
-        text="Digite o código abaixo 👇",
-        reply_markup=ForceReply(selective=True),
-    )
 
-
+# ═══════════════════════════════════════════════
+# ❌ CANCELAR
+# ═══════════════════════════════════════════════
 async def gift_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -48,8 +45,10 @@ async def gift_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 
+# ═══════════════════════════════════════════════
+# 🎁 RECEBE O CÓDIGO DO GIFT
+# ═══════════════════════════════════════════════
 async def gift_code_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handler de texto quando awaiting_gift está ativo."""
     if not context.user_data.get("awaiting_gift"):
         return
 
@@ -85,7 +84,10 @@ async def gift_code_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         u2 = await db.get_user(user.id)
 
         await update.message.reply_text(
-            messages.gift_success_text(gift, extra=f"\n💼 Saldo atual: <b>R$ {float(u2['balance']):.2f}</b>"),
+            messages.gift_success_text(
+                gift,
+                extra=f"\n💼 Saldo atual: <b>R$ {float(u2['balance']):.2f}</b>",
+            ),
             parse_mode=ParseMode.HTML,
         )
         return
@@ -103,8 +105,10 @@ async def gift_code_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 
+# ═══════════════════════════════════════════════
+# 🎁 USAR GIFT (vai pro produto)
+# ═══════════════════════════════════════════════
 async def gift_use(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Ao clicar em 🎁 Usar → vai direto à tela do produto (sem /start)."""
     query = update.callback_query
     await query.answer()
 
