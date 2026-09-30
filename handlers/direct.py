@@ -1,11 +1,14 @@
 """
 Ações Diretas — botões que executam ações no bot SEM precisar de /start.
 Funciona de qualquer lugar: canal, grupo, privado, forwarded.
+
+Também processa o botão "🔍 Ver Compra" (só comprador ou admin).
 """
 from telegram import Update
 from telegram.constants import ParseMode
 from telegram.ext import ContextTypes
 
+from config import ADMIN_IDS
 from database import db
 from keyboards import menus
 from texts import messages
@@ -21,17 +24,62 @@ async def direct_router(update: Update, context: ContextTypes.DEFAULT_TYPE):
       direct:gift
       direct:topup
       direct:start
+      direct:view_purchase:<owner_id>:<purchase_id>
     """
     query = update.callback_query
     user = update.effective_user
+    parts = query.data.split(":")
+    action = parts[1] if len(parts) > 1 else ""
 
-    # Verifica canal obrigatório
+    # ═══════════════════════════════════════════════
+    # 🔍 VER COMPRA — antes do gate (admin não precisa estar no canal)
+    # ═══════════════════════════════════════════════
+    if action == "view_purchase" and len(parts) >= 4:
+        try:
+            owner_id    = int(parts[2])
+            purchase_id = parts[3]
+        except (ValueError, IndexError):
+            await query.answer("Dados inválidos.", show_alert=True)
+            return
+
+        # Só o comprador ou o admin podem abrir
+        if user.id != owner_id and user.id not in ADMIN_IDS:
+            await query.answer(
+                "🔒 Esse botão é só para o comprador ou o admin.",
+                show_alert=True,
+            )
+            return
+
+        purchase = await db.get_purchase(purchase_id)
+        if not purchase:
+            await query.answer("Compra não encontrada.", show_alert=True)
+            return
+
+        product = await db.get_product(purchase["product_id"])
+        activate_url = (product or {}).get("activate_url") or "https://t.me/"
+
+        await query.answer()
+        await context.bot.send_message(
+            chat_id=query.message.chat_id,
+            text=messages.delivery_text(
+                purchase,
+                purchase["email"],
+                purchase["password"],
+                masked=True,
+            ),
+            reply_markup=menus.delivery_keyboard(purchase["id"], activate_url),
+            parse_mode=ParseMode.HTML,
+        )
+        return
+
+    # ═══════════════════════════════════════════════
+    # 🔐 GATE — todos os outros exigem estar no canal
+    # ═══════════════════════════════════════════════
     if not await is_member(context, user.id):
         await query.answer(
             "⚠️ Entre no canal obrigatório primeiro para continuar.",
             show_alert=True,
         )
-        # Manda o Gate (nova msg, pois estamos fora do fluxo normal)
         msg = await context.bot.send_message(
             chat_id=query.message.chat_id,
             text=messages.gate_text(),
@@ -43,10 +91,10 @@ async def direct_router(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     u = await db.get_or_create_user(user.id, user.username, user.first_name)
-    parts = query.data.split(":")
-    action = parts[1] if len(parts) > 1 else ""
 
-    # ─── Abrir produto direto
+    # ═══════════════════════════════════════════════
+    # 🎯 ABRIR PRODUTO
+    # ═══════════════════════════════════════════════
     if action == "product" and len(parts) >= 3:
         try:
             pid = int(parts[2])
@@ -59,7 +107,7 @@ async def direct_router(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await query.answer("Produto não encontrado.", show_alert=True)
             return
 
-        # Registra visualização (para carrinho abandonado)
+        # Registra visualização (carrinho abandonado)
         await db.save_cart_view(user.id, pid)
 
         await query.answer()
@@ -70,7 +118,6 @@ async def direct_router(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 parse_mode=ParseMode.HTML,
             )
         except Exception:
-            # Se não puder editar (mensagem antiga, forwarded, etc), envia nova
             await context.bot.send_message(
                 chat_id=query.message.chat_id,
                 text=messages.product_text(u, product),
@@ -79,7 +126,9 @@ async def direct_router(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
         return
 
-    # ─── Abrir catálogo
+    # ═══════════════════════════════════════════════
+    # 🛍 ABRIR CATÁLOGO
+    # ═══════════════════════════════════════════════
     if action == "catalog":
         products = await db.get_products()
         await query.answer()
@@ -98,9 +147,10 @@ async def direct_router(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
         return
 
-    # ─── Abrir fluxo de gift card
+    # ═══════════════════════════════════════════════
+    # 🎁 ABRIR FLUXO DE GIFT CARD
+    # ═══════════════════════════════════════════════
     if action == "gift":
-        from handlers import gift as gift_handler
         context.user_data["awaiting_gift"] = True
 
         await query.answer()
@@ -121,9 +171,10 @@ async def direct_router(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
 
-    # ─── Abrir recarga
+    # ═══════════════════════════════════════════════
+    # 💠 ABRIR RECARGA
+    # ═══════════════════════════════════════════════
     if action == "topup":
-        from handlers import topup as topup_handler
         await query.answer()
         try:
             await query.edit_message_text(
@@ -140,7 +191,9 @@ async def direct_router(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
         return
 
-    # ─── Equivalente ao /start (menu principal)
+    # ═══════════════════════════════════════════════
+    # ✅ EQUIVALENTE AO /start (menu principal)
+    # ═══════════════════════════════════════════════
     if action == "start":
         await query.answer()
         try:
@@ -158,4 +211,7 @@ async def direct_router(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
         return
 
+    # ═══════════════════════════════════════════════
+    # Fallback
+    # ═══════════════════════════════════════════════
     await query.answer()
