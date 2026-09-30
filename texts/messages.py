@@ -5,18 +5,10 @@ from datetime import datetime
 # MÓDULO 1 — GATE, MENU, CATÁLOGO, PRODUTO
 # ═══════════════════════════════════════════════
 
-# ────────────────────────────────────────────────
-# 🔐 1. GATE DE ENTRADA
-# ────────────────────────────────────────────────
 def gate_text() -> str:
-    return (
-        "❗ <b>Para utilizar nosso serviço é obrigatório que você entre no nosso grupo.</b>"
-    )
+    return "❗ <b>Para utilizar nosso serviço é obrigatório que você entre no nosso grupo.</b>"
 
 
-# ────────────────────────────────────────────────
-# 🏠 2. BOAS-VINDAS (MENU PRINCIPAL)
-# ────────────────────────────────────────────────
 def welcome_text(user: dict) -> str:
     return (
         "📡 <b>Bem-vindo à Larizinha Store!</b>\n"
@@ -33,9 +25,6 @@ def welcome_text(user: dict) -> str:
     )
 
 
-# ────────────────────────────────────────────────
-# 📦 3. CATÁLOGO DE PRODUTOS
-# ────────────────────────────────────────────────
 def catalog_text(user: dict) -> str:
     return (
         "⚡ <b>Lari Contas | Catálogo de Serviços</b>\n"
@@ -45,9 +34,6 @@ def catalog_text(user: dict) -> str:
     )
 
 
-# ────────────────────────────────────────────────
-# 🎯 4. TELA DO PRODUTO
-# ────────────────────────────────────────────────
 def product_text(user: dict, product: dict) -> str:
     price = float(product["price"])
     stock = int(product["stock"])
@@ -71,35 +57,6 @@ def product_text(user: dict, product: dict) -> str:
     )
 
 
-# ────────────────────────────────────────────────
-# 👤 8. MEU PERFIL (com stats reais)
-# ────────────────────────────────────────────────
-def profile_text(user: dict, stats: dict | None = None) -> str:
-    stats = stats or {}
-    whatsapp = user.get("whatsapp") or "Não cadastrado"
-    compras = stats.get("compras", 0)
-    gasto = stats.get("gasto", 0.0)
-    pix_in = stats.get("pix_inseridos", 0.0)
-    gifts = stats.get("gifts_valor", 0.0)
-
-    return (
-        "👤 <b>Meu perfil</b>\n\n"
-        "🔍 Veja aqui os detalhes da sua conta:\n\n"
-        "- 👤 <b>Informações:</b>\n"
-        f"🆔 ID da Carteira: <code>{user['user_id']}</code>\n"
-        f"💰 Saldo Atual: <b>R$ {float(user['balance']):.2f}</b>\n"
-        f"📲 Seu Whatsapp: <code>{whatsapp}</code>\n\n"
-        "─── 📊 <b>Suas Movimentações:</b>\n"
-        f"ー 🛒 Compras Realizadas: <b>{compras}</b>\n"
-        f"ー 💰 Total Gasto Em Compras: <b>R$ {gasto:.2f}</b>\n"
-        f"ー 💠 Pix Inseridos: <b>R$ {pix_in:.2f}</b>\n"
-        f"ー 🎁 Gifts Resgatados: <b>R$ {gifts:.2f}</b>"
-    )
-
-
-# ────────────────────────────────────────────────
-# 🤖 20. SOBRE O BOT
-# ────────────────────────────────────────────────
 def about_text() -> str:
     return (
         "🤖 <b>Sobre o Bot</b>\n\n"
@@ -109,9 +66,6 @@ def about_text() -> str:
     )
 
 
-# ────────────────────────────────────────────────
-# 🚧 MÓDULOS EM BREVE
-# ────────────────────────────────────────────────
 def soon_text(area: str) -> str:
     return f"🚧 <b>{area}</b>\n\nEsse módulo será liberado em breve."
 
@@ -120,9 +74,6 @@ def soon_text(area: str) -> str:
 # MÓDULO 2 — COMPRA, PIX, ENTREGA, MULTI
 # ═══════════════════════════════════════════════
 
-# ────────────────────────────────────────────────
-# 💸 5. SALDO INSUFICIENTE
-# ────────────────────────────────────────────────
 def insufficient_text(user: dict, product: dict, quantity: int = 1) -> str:
     total = float(product["price"]) * quantity
     saldo = float(user["balance"])
@@ -136,9 +87,6 @@ def insufficient_text(user: dict, product: dict, quantity: int = 1) -> str:
     )
 
 
-# ────────────────────────────────────────────────
-# ⏳ 6. GERANDO PAGAMENTO + QR CODE
-# ────────────────────────────────────────────────
 def generating_payment_text() -> str:
     return "⏳ <b>Gerando pagamento...</b>"
 
@@ -153,9 +101,6 @@ def pix_caption(pix_id: str, valor: float, expira: str) -> str:
     )
 
 
-# ────────────────────────────────────────────────
-# ⏰ 7. AGUARDANDO PAGAMENTO
-# ────────────────────────────────────────────────
 def not_paid_text() -> str:
     return (
         "⚠️ <b>Nosso sistema viu que você não realizou o pagamento</b>\n\n"
@@ -168,9 +113,6 @@ def paid_caption() -> str:
     return "✅ <b>PAGAMENTO CONFIRMADO!</b>"
 
 
-# ────────────────────────────────────────────────
-# ✅ 9. ENTREGA DO PRODUTO
-# ────────────────────────────────────────────────
 def delivery_text(purchase: dict, email: str, password: str, masked: bool = True) -> str:
     created = purchase.get("created_at") or datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     expires = purchase.get("expires_at") or "-"
@@ -201,9 +143,6 @@ def delivery_text(purchase: dict, email: str, password: str, masked: bool = True
     )
 
 
-# ────────────────────────────────────────────────
-# 🛒 7. COMPRAR MAIS DE UM
-# ────────────────────────────────────────────────
 def multi_qty_text(product: dict) -> str:
     return (
         "Quantos logins deseja comprar?\n\n"
@@ -226,19 +165,36 @@ def multi_result_text(user: dict, product: dict, qty: int) -> str:
 
 
 def multi_cancelled_text() -> str:
-    return (
-        "❌ <b>Compra cancelada!</b>\n\n"
-        "Operação de compra múltipla foi cancelada."
-    )
+    return "❌ <b>Compra cancelada!</b>\n\nOperação de compra múltipla foi cancelada."
 
 
 # ═══════════════════════════════════════════════
 # MÓDULO 3 — PERFIL, HISTÓRICO, GIFT, DADOS, RECARGA
 # ═══════════════════════════════════════════════
 
-# ────────────────────────────────────────────────
-# 📜 9. HISTÓRICO DE COMPRAS
-# ────────────────────────────────────────────────
+def profile_text(user: dict, stats: dict | None = None) -> str:
+    stats = stats or {}
+    whatsapp = user.get("whatsapp") or "Não cadastrado"
+    compras = stats.get("compras", 0)
+    gasto = stats.get("gasto", 0.0)
+    pix_in = stats.get("pix_inseridos", 0.0)
+    gifts = stats.get("gifts_valor", 0.0)
+
+    return (
+        "👤 <b>Meu perfil</b>\n\n"
+        "🔍 Veja aqui os detalhes da sua conta:\n\n"
+        "- 👤 <b>Informações:</b>\n"
+        f"🆔 ID da Carteira: <code>{user['user_id']}</code>\n"
+        f"💰 Saldo Atual: <b>R$ {float(user['balance']):.2f}</b>\n"
+        f"📲 Seu Whatsapp: <code>{whatsapp}</code>\n\n"
+        "─── 📊 <b>Suas Movimentações:</b>\n"
+        f"ー 🛒 Compras Realizadas: <b>{compras}</b>\n"
+        f"ー 💰 Total Gasto Em Compras: <b>R$ {gasto:.2f}</b>\n"
+        f"ー 💠 Pix Inseridos: <b>R$ {pix_in:.2f}</b>\n"
+        f"ー 🎁 Gifts Resgatados: <b>R$ {gifts:.2f}</b>"
+    )
+
+
 def history_empty_text() -> str:
     return (
         "Você não tem compras no bot.\n"
@@ -272,9 +228,6 @@ def history_item_text(purchase: dict, idx: int, total: int, page: int, pages: in
     )
 
 
-# ────────────────────────────────────────────────
-# 🎁 10. GIFT CARD
-# ────────────────────────────────────────────────
 def gift_prompt_text() -> str:
     return (
         "🎁 <b>RESGATAR GIFT CARD</b>\n"
@@ -306,9 +259,6 @@ def gift_success_text(gift: dict, extra: str = "") -> str:
     )
 
 
-# ────────────────────────────────────────────────
-# ✏️ 11. ALTERAR DADOS
-# ────────────────────────────────────────────────
 def alter_data_text(user: dict) -> str:
     whats = user.get("whatsapp") or "Não cadastrado"
     return (
@@ -343,9 +293,6 @@ def whatsapp_removed_text() -> str:
     return "✅ <b>WhatsApp removido com sucesso!</b>"
 
 
-# ────────────────────────────────────────────────
-# 💠 12. RECARREGAR SALDO (PIX RÁPIDO)
-# ────────────────────────────────────────────────
 def topup_menu_text() -> str:
     return (
         "💠 Opte por <b>PIX Rápido</b> para que seu saldo seja creditado imediatamente.\n"
@@ -373,9 +320,7 @@ def topup_invalid_value_text() -> str:
 
 
 def topup_pix_caption(pix_id: str, valor: float, bonus: float, saldo_atual: float, saldo_futuro: float, expira: str) -> str:
-    bonus_line = (
-        f"🎁 Bônus: <b>R$ {bonus:.2f}</b>\n" if bonus > 0 else ""
-    )
+    bonus_line = f"🎁 Bônus: <b>R$ {bonus:.2f}</b>\n" if bonus > 0 else ""
     return (
         "💠 <b>PIX de recarga gerado!</b>\n\n"
         f"💰 Valor: <b>R$ {valor:.2f}</b>\n"
@@ -400,3 +345,85 @@ def topup_success_text(valor: float, bonus: float, novo_saldo: float) -> str:
 
 def topup_cancelled_text() -> str:
     return "❌ <b>Recarga cancelada.</b>"
+
+
+def pix_cancelled_text() -> str:
+    return "❌ <b>PIX cancelado.</b>"
+
+
+# ═══════════════════════════════════════════════
+# MÓDULO 4 — AFILIADOS, SAQUES, TOP, PESQUISA
+# ═══════════════════════════════════════════════
+
+def affiliates_inactive_text() -> str:
+    return (
+        "💰 <b>PROGRAMA DE AFILIADOS</b>\n\n"
+        "⚙️ Status: ❌ <b>Inativo</b>\n"
+        "🧲 Comissão: <b>20.0%</b>\n"
+        "💰 Saque mínimo: <b>R$ 20.00</b>\n\n"
+        "ℹ️ <b>INFO:</b> Seus indicados continuarão gerando comissão para sempre."
+    )
+
+
+def affiliates_active_text(user: dict, stats: dict, link: str) -> str:
+    indicados = stats["indicados"]
+    total = stats["total_ganho"]
+    media = stats["media"]
+
+    if indicados < 5:
+        nivel = "Iniciante"
+        emoji_nivel = "🌱"
+        meta = 5
+    elif indicados < 20:
+        nivel = "Bronze"
+        emoji_nivel = "🥉"
+        meta = 20
+    elif indicados < 50:
+        nivel = "Prata"
+        emoji_nivel = "🥈"
+        meta = 50
+    else:
+        nivel = "Ouro"
+        emoji_nivel = "🥇"
+        meta = 100
+
+    restantes = max(meta - indicados, 0)
+
+    return (
+        "💰 <b>PROGRAMA DE AFILIADOS</b>\n\n"
+        "⚙️ Status: ✅ <b>Ativo</b>\n"
+        "🧲 Sua comissão: <b>20.0%</b> (de todas recargas do indicado)\n\n"
+        f"👥 Indicações: <b>{indicados}</b>\n"
+        f"🪙 Total ganho: <b>R$ {total:.2f}</b>\n"
+        f"📊 Média: <b>R$ {media:.2f}</b>\n"
+        "💰 Saque mínimo: <b>R$ 20.00</b>\n\n"
+        f"{emoji_nivel}| Nível: <b>{nivel}</b>\n"
+        f"🎯 Próxima meta: <b>{meta}</b> ({restantes} restantes)\n\n"
+        "ℹ️ <b>INFO:</b> Seus indicados continuarão gerando comissão para sempre.\n"
+        "A comissão pode ser alterada a qualquer momento, fique atento aos avisos.\n\n"
+        f"🔗 <b>Seu link:</b>\n<code>{link}</code>"
+    )
+
+
+def top_text(rows: list[dict], filtro: str) -> str:
+    titulos = {
+        "compras": "usuários que mais compraram (deste mês)",
+        "recargas": "usuários que mais recarregaram",
+        "gift": "usuários que mais resgataram gift cards",
+        "saldo": "usuários com maior saldo",
+    }
+    t = titulos.get(filtro, titulos["compras"])
+
+    linhas = [f"🏆 <b>Ranking dos {t}</b>\n"]
+    medals = ["🥇", "🥈", "🥉"]
+
+    if not rows:
+        linhas.append("<i>Sem dados ainda.</i>")
+    else:
+        for i, r in enumerate(rows):
+            pos = medals[i] if i < 3 else f"{i+1}º"
+            nome = r.get("first_name") or r.get("username") or f"ID {r['user_id']}"
+            total = float(r.get("total") or 0)
+            linhas.append(f"{pos}) {nome} — <b>R$ {total:.2f}</b>")
+
+    return "\n".join(linhas)
