@@ -1,22 +1,26 @@
-from telegram import Update
+from telegram import (
+    Update,
+    InlineKeyboardButton,
+    InlineKeyboardMarkup,
+    WebAppInfo,
+)
 from telegram.constants import ParseMode
 from telegram.ext import ContextTypes
 
+from config import MINIAPP_BASE_URL
 from database import db
 from keyboards import menus
 from texts import messages
-from handlers.start import is_member
+from handlers import profile as profile_handler
 
 
+# ═══════════════════════════════════════════════
+# MENU PRINCIPAL — roteador de callbacks
+# ═══════════════════════════════════════════════
 async def menu_router(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     data = query.data
     user = update.effective_user
-
-    # Se não estiver no canal, bloqueia
-    if not await is_member(context, user.id):
-        await query.answer("⚠️ Entre no canal obrigatório primeiro.", show_alert=True)
-        return
 
     u = await db.get_or_create_user(user.id, user.username, user.first_name)
 
@@ -39,9 +43,25 @@ async def menu_router(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # ─── Meu Perfil
     elif data == "menu:profile":
+        await profile_handler.show_profile(update, context)
+
+    # ─── Recarregar Saldo
+    elif data == "menu:topup":
+        from handlers import topup as topup_handler
+        await topup_handler.topup_open(update, context)
+
+    # ─── Abrir Loja (Web App dentro do Telegram)
+    elif data == "menu:store":
+        url = f"{MINIAPP_BASE_URL}/loja/{user.id}"
+
+        kb = InlineKeyboardMarkup([[
+            InlineKeyboardButton("🛒 Abrir Loja", web_app=WebAppInfo(url=url))
+        ]])
+
         await query.edit_message_text(
-            messages.profile_text(u),
-            reply_markup=menus.profile_keyboard(),
+            "🛒 <b>Clique abaixo para abrir a loja:</b>\n\n"
+            "Você será redirecionado para uma experiência completa dentro do Telegram.",
+            reply_markup=kb,
             parse_mode=ParseMode.HTML,
         )
 
@@ -63,41 +83,6 @@ async def menu_router(update: Update, context: ContextTypes.DEFAULT_TYPE):
         }
         await query.edit_message_text(
             messages.soon_text(nomes.get(area, area)),
-            reply_markup=menus.back_to_menu_keyboard(),
-            parse_mode=ParseMode.HTML,
-        )
-
-    elif data == "menu:store":
-        await query.edit_message_text(
-            messages.soon_text("🛒 Abrir Loja"),
-            reply_markup=menus.back_to_menu_keyboard(),
-            parse_mode=ParseMode.HTML,
-        )
-
-    elif data == "menu:topup":
-        await query.edit_message_text(
-            messages.soon_text("💠 Recarregar Saldo"),
-            reply_markup=menus.back_to_menu_keyboard(),
-            parse_mode=ParseMode.HTML,
-        )
-
-    elif data == "menu:affiliates":
-        await query.edit_message_text(
-            messages.soon_text("👥 Afiliados"),
-            reply_markup=menus.back_to_menu_keyboard(),
-            parse_mode=ParseMode.HTML,
-        )
-
-    elif data == "menu:top":
-        await query.edit_message_text(
-            messages.soon_text("🏆 Top Compradores"),
-            reply_markup=menus.back_to_menu_keyboard(),
-            parse_mode=ParseMode.HTML,
-        )
-
-    elif data == "menu:search":
-        await query.edit_message_text(
-            messages.soon_text("🔎 Pesquisar Serviços"),
             reply_markup=menus.back_to_menu_keyboard(),
             parse_mode=ParseMode.HTML,
         )
