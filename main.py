@@ -666,43 +666,36 @@ def run_flask():
 # MIDDLEWARE — MANUTENÇÃO + BAN
 # ═══════════════════════════════════════════════
 async def _middleware(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """
-    Roda antes de TODOS os handlers.
-      - Bloqueia usuário banido
-      - Bloqueia tudo se manutenção ligada (exceto admins/subadmins)
-    """
     user = update.effective_user
     if not user:
         return
 
-    # Admins e subadmins ignoram os bloqueios
     ok_admin, _ = await db.admin_is_admin_or_sub(user.id)
     if ok_admin:
         return
 
-    # ─── Banido
     try:
         if await db.is_banned(user.id):
-            msg = "🚫 <b>Você está banido deste bot.</b>"
             if update.callback_query:
                 await update.callback_query.answer("🚫 Você está banido.", show_alert=True)
             elif update.message:
-                await update.message.reply_text(msg, parse_mode=ParseMode.HTML)
+                await update.message.reply_text(
+                    "🚫 <b>Você está banido deste bot.</b>",
+                    parse_mode=ParseMode.HTML,
+                )
             return
     except Exception:
         pass
 
-    # ─── Manutenção
     try:
         if await db.get_maintenance():
-            msg = (
-                "🚧 <b>Bot em manutenção</b>\n\n"
-                "Estamos fazendo melhorias. Volte em alguns minutos!"
-            )
             if update.callback_query:
                 await update.callback_query.answer("🚧 Bot em manutenção.", show_alert=True)
             elif update.message:
-                await update.message.reply_text(msg, parse_mode=ParseMode.HTML)
+                await update.message.reply_text(
+                    "🚧 <b>Bot em manutenção</b>\n\nVolte em alguns minutos!",
+                    parse_mode=ParseMode.HTML,
+                )
             return
     except Exception:
         pass
@@ -731,7 +724,7 @@ async def post_init(app):
 
 
 # ═══════════════════════════════════════════════
-# COMANDOS ADMIN / UTIL
+# COMANDOS
 # ═══════════════════════════════════════════════
 async def mark_paid(update: Update, context):
     if update.effective_user.id not in ADMIN_IDS:
@@ -782,59 +775,101 @@ async def myid_command(update: Update, context):
 # ROTEADOR DE TEXTO LIVRE
 # ═══════════════════════════════════════════════
 async def _text_router(update: Update, context):
+    """
+    Encaminha a mensagem de texto pro handler correto conforme o estado
+    em context.user_data. Admin primeiro, usuário comum depois.
+    """
     ud = context.user_data
 
     # ─── ADMIN
     if ud.get("admin_await_search"):
         return await admin1.admin_search_handler(update, context)
+
     if ud.get("admin_balance"):
         return await admin1.admin_balance_handler(update, context)
+
     if ud.get("admin_edit_price"):
         return await admin1.admin_edit_price_handler(update, context)
+
     if ud.get("admin_edit_stock"):
         return await admin1.admin_edit_stock_handler(update, context)
+
     if ud.get("admin_bc"):
         return await admin5.admin_bc_media_handler(update, context)
+
     if ud.get("admin_purchase_search"):
         return await admin2.admin_purchase_search_handler(update, context)
+
     if ud.get("admin_gift_tipo"):
         return await admin2.admin_gift_valor_handler(update, context)
+
     if ud.get("admin_gift_valor") is not None or ud.get("admin_gift_produto") is not None:
         return await admin2.admin_gift_qtd_handler(update, context)
+
     if ud.get("admin_cfg_edit"):
         return await admin3.admin_cfg_edit_handler(update, context)
+
     if ud.get("admin_text_edit"):
         return await admin3.admin_text_edit_handler(update, context)
+
     if ud.get("admin_btn_edit"):
         return await admin3.admin_btn_edit_handler(update, context)
+
     if ud.get("admin_prod_edit"):
         return await admin4.admin_prod_edit_handler(update, context)
+
     if ud.get("admin_stock_add"):
         return await admin4.admin_stock_add_handler(update, context)
+
     if ud.get("admin_new_prod"):
         return await admin4.admin_new_product_handler(update, context)
+
     if ud.get("admin_msg_user"):
         return await admin5.admin_msg_user_handler(update, context)
+
     if ud.get("admin_sub_add"):
         return await admin6.admin_sub_add_handler(update, context)
 
     # ─── USUÁRIO COMUM
     if ud.get("awaiting_multi"):
         return await multi.multi_qty_handler(update, context)
+
     if ud.get("awaiting_gift"):
         return await gift.gift_code_handler(update, context)
+
     if ud.get("awaiting_whatsapp"):
         return await alterdata.whatsapp_handler(update, context)
+
     if ud.get("awaiting_topup_value"):
         return await topup.topup_value_handler(update, context)
+
     if ud.get("awaiting_wd_key"):
         return await withdraw.withdraw_key_handler(update, context)
+
     if ud.get("awaiting_wd_amount"):
         return await withdraw.withdraw_amount_handler(update, context)
+
     if ud.get("awaiting_wd_pin"):
         return await withdraw.withdraw_pin_handler(update, context)
+
     if ud.get("awaiting_search"):
         return await search.search_handler(update, context)
+
+    return
+
+
+# ═══════════════════════════════════════════════
+# ROTEADOR DE MÍDIA (foto/vídeo)
+# ═══════════════════════════════════════════════
+async def _media_router(update: Update, context):
+    ud = context.user_data
+
+    if ud.get("admin_banner_new"):
+        return await admin3.admin_banner_photo_handler(update, context)
+
+    if ud.get("admin_bc"):
+        return await admin5.admin_bc_media_handler(update, context)
+
     return
 
 
@@ -891,10 +926,10 @@ def build_app():
     app.add_handler(InlineQueryHandler(inline.inline_query))
 
     # ═══════════════════════════════════════════
-    # ADMIN — Callbacks (ordem importa: específicos antes dos genéricos)
+    # ADMIN — Callbacks (específicos antes dos genéricos)
     # ═══════════════════════════════════════════
 
-    # ─── ADMIN 1 — Dashboard / Usuários / Produtos básicos
+    # ─── ADMIN 1 — Dashboard / Usuários / Manutenção / Logs
     app.add_handler(CallbackQueryHandler(admin1.admin_home_cb,             pattern=r"^admin:home$"))
     app.add_handler(CallbackQueryHandler(admin1.admin_users_cb,            pattern=r"^admin:users$"))
     app.add_handler(CallbackQueryHandler(admin1.admin_user_search_prompt,  pattern=r"^admin:user_search$"))
@@ -1032,29 +1067,11 @@ def build_app():
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, _text_router))
 
     # ═══════════════════════════════════════════
-    # MÍDIA — Banner + Broadcast com foto/vídeo
+    # MÍDIA (foto/vídeo) — Banner + Broadcast com mídia
     # ═══════════════════════════════════════════
-    app.add_handler(MessageHandler(
-        filters.PHOTO | filters.VIDEO,
-        _media_router,
-    ))
+    app.add_handler(MessageHandler(filters.PHOTO | filters.VIDEO, _media_router))
 
     return app
-
-
-# ═══════════════════════════════════════════════
-# ROTEADOR DE MÍDIA
-# ═══════════════════════════════════════════════
-async def _media_router(update: Update, context):
-    ud = context.user_data
-
-    # Banner
-    if ud.get("admin_banner_new"):
-        return await admin3.admin_banner_photo_handler(update, context)
-
-    # Broadcast com mídia
-    if ud.get("admin_bc"):
-        return await admin5.admin_bc_media_handler(update, context)
 
 
 # ═══════════════════════════════════════════════
