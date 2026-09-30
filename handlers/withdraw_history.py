@@ -1,15 +1,17 @@
-from telegram import Update, BufferedInputFile
+from telegram import Update, InputFile
 from telegram.constants import ParseMode
 from telegram.ext import ContextTypes
 
 from config import BOT_HANDLE
 from database import db
-from keyboards import menus
 from services import pdf_gen
 from texts import messages
 
 
 async def withdraw_history(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """
+    Gera PDF do histórico de saques do usuário e envia como documento.
+    """
     query = update.callback_query
     await query.answer()
 
@@ -22,7 +24,7 @@ async def withdraw_history(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     await context.bot.send_document(
         chat_id=query.message.chat_id,
-        document=BufferedInputFile(pdf_bytes, filename="extrato-larizinha.pdf"),
+        document=InputFile(pdf_bytes, filename="extrato-larizinha.pdf"),
         caption="📄 <b>Extrato do Bot</b>",
         parse_mode=ParseMode.HTML,
     )
