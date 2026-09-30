@@ -27,7 +27,6 @@ LABELS = {
     "commission":    "🧲 Comissão de afiliado (%)",
 }
 
-# Campos que devem ser numéricos
 NUMERIC_FIELDS = {"bonus_rate", "topup_min", "withdraw_min", "commission"}
 
 
@@ -39,7 +38,10 @@ async def _edit_or_send(query, text: str, kb=None):
     try:
         await query.edit_message_text(text, reply_markup=kb, parse_mode=ParseMode.HTML)
     except Exception:
-        await query.message.reply_text(text, reply_markup=kb, parse_mode=ParseMode.HTML)
+        try:
+            await query.message.reply_text(text, reply_markup=kb, parse_mode=ParseMode.HTML)
+        except Exception:
+            pass
 
 
 async def _delete_prompt(context, id_key, chat_key):
@@ -121,7 +123,6 @@ async def admin_cfg_v2_edit_cb(update: Update, context: ContextTypes.DEFAULT_TYP
     context.user_data["_cfg_prompt_id"] = query.message.message_id
     context.user_data["_cfg_prompt_chat"] = query.message.chat_id
 
-    # Dica extra por tipo
     dica = ""
     if key in NUMERIC_FIELDS:
         dica = "\n\n💡 <i>Envie apenas números (ex: 20 ou 4.50)</i>"
@@ -164,7 +165,6 @@ async def admin_cfg_v2_edit_handler(update: Update, context: ContextTypes.DEFAUL
     if not texto:
         return
 
-    # Validação
     erro = None
     if key in NUMERIC_FIELDS:
         try:
@@ -184,7 +184,6 @@ async def admin_cfg_v2_edit_handler(update: Update, context: ContextTypes.DEFAUL
 
     context.user_data.pop("admin_cfg2_edit", None)
 
-    # Salva no banco + cache
     await db.set_config(key, texto)
     cache.set_config(key, texto)
 
@@ -220,7 +219,6 @@ async def admin_cfg_v2_reset_cb(update: Update, context: ContextTypes.DEFAULT_TY
     key = query.data.split(":", 2)[2]
     await db.admin_config_reset(key)
 
-    # Atualiza cache
     cfg = await db.admin_configs_all()
     cache.set_config(key, cfg.get(key, ""))
 
@@ -298,7 +296,6 @@ async def admin_cfg_v2_add_handler(update: Update, context: ContextTypes.DEFAULT
         await _delete_prompt(context, "_cfg_prompt_id", "_cfg_prompt_chat")
         return
 
-    # PASSO 1 — chave
     if state["step"] == "key":
         key = texto.replace(" ", "_").lower()
         if not key.replace("_", "").isalnum():
@@ -327,7 +324,6 @@ async def admin_cfg_v2_add_handler(update: Update, context: ContextTypes.DEFAULT
         )
         return
 
-    # PASSO 2 — valor
     if state["step"] == "value":
         key = state["key"]
         valor = texto
@@ -393,7 +389,6 @@ async def admin_text_v2_view_cb(update: Update, context: ContextTypes.DEFAULT_TY
         await _edit_or_send(query, "❌ Texto não encontrado.", menus.admin_back_kb())
         return
 
-    # Trunca se for muito grande
     if len(valor) > 900:
         preview = valor[:900] + "\n\n<i>... (mostrando 900 chars)</i>"
     else:
@@ -401,7 +396,6 @@ async def admin_text_v2_view_cb(update: Update, context: ContextTypes.DEFAULT_TY
 
     template_vars = ""
     if "{" in valor:
-        # Detecta variáveis
         import re
         vars_encontradas = set(re.findall(r"\{(\w+)\}", valor))
         if vars_encontradas:
@@ -513,7 +507,6 @@ async def admin_text_v2_reset_cb(update: Update, context: ContextTypes.DEFAULT_T
         await query.answer("⚠️ Este texto não tem versão padrão.", show_alert=True)
         return
 
-    # Recarrega cache
     novo_valor = await db.admin_get_text(key)
     cache.set_text(key, novo_valor or "")
 
@@ -862,7 +855,6 @@ async def admin_cfg_v2_import_handler(update: Update, context: ContextTypes.DEFA
 
     try:
         resumo = await db.admin_configs_import(conteudo)
-        # Recarrega cache inteiro
         await cache.load_all()
 
         await db.log_admin_action(
