@@ -1,5 +1,5 @@
 """
-Módulo ADMIN — USUÁRIOS (v2 — completo, com filtros, histórico, ban temp).
+Módulo ADMIN — USUÁRIOS v2 (completo).
 """
 import logging
 import io
@@ -14,7 +14,6 @@ from keyboards import menus
 logger = logging.getLogger(__name__)
 
 USERS_PAGE_SIZE = 8
-_ZERO = "\u200b"
 
 
 def is_admin(user_id: int) -> bool:
@@ -25,7 +24,10 @@ async def _edit_or_send(query, text: str, kb=None):
     try:
         await query.edit_message_text(text, reply_markup=kb, parse_mode=ParseMode.HTML)
     except Exception:
-        await query.message.reply_text(text, reply_markup=kb, parse_mode=ParseMode.HTML)
+        try:
+            await query.message.reply_text(text, reply_markup=kb, parse_mode=ParseMode.HTML)
+        except Exception:
+            pass
 
 
 async def _delete_prompt(context, id_key, chat_key):
@@ -306,7 +308,6 @@ async def admin_usr_saldo_handler(update: Update, context: ContextTypes.DEFAULT_
         update.effective_user.id, f"usr_{tipo}_saldo", str(user_id), f"R$ {valor:.2f}"
     )
 
-    # Notifica o user (opcional)
     try:
         emoji = {"add": "💰", "rem": "➖", "set": "✏️"}[tipo]
         await context.bot.send_message(
@@ -572,7 +573,6 @@ async def admin_usr_reset_pin_cb(update: Update, context: ContextTypes.DEFAULT_T
     await db.admin_reset_payout_password(user_id)
     await db.log_admin_action(update.effective_user.id, "usr_reset_pin", str(user_id))
 
-    # Notifica o user
     try:
         await context.bot.send_message(
             chat_id=user_id,
@@ -697,7 +697,6 @@ async def admin_usr_ban_handler(update: Update, context: ContextTypes.DEFAULT_TY
         f"dur={dur} motivo={motivo[:50]}",
     )
 
-    # Notifica o user
     dur_txt = "permanente" if dias is None else f"por {dias} dia(s)"
     try:
         await context.bot.send_message(
