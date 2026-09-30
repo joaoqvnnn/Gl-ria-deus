@@ -7,11 +7,19 @@ from keyboards import menus
 from texts import messages
 
 
-PAGE_SIZE = 1  # 1 compra por página (formato "1/2")
+PAGE_SIZE = 1  # 1 compra por página
 
 
+# ═══════════════════════════════════════════════
+# 📜 ROTEADOR DO HISTÓRICO
+# ═══════════════════════════════════════════════
 async def history_router(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Roteia: hist:all:N | hist:active:N | hist:noop"""
+    """
+    Roteia:
+      hist:all:N     → todas as compras, página N
+      hist:active:N  → apenas ativas, página N
+      hist:noop      → botão de paginação (só um label)
+    """
     query = update.callback_query
 
     parts = query.data.split(":")
@@ -30,7 +38,7 @@ async def history_router(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     purchases = await db.list_purchases(user.id, only_active=only_active)
 
-    # ─── Vazio (todas)
+    # ─── Vazio (todas as compras)
     if not purchases and not only_active:
         await query.edit_message_text(
             messages.history_empty_text(),
@@ -48,6 +56,7 @@ async def history_router(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
 
+    # ─── Paginação
     total = len(purchases)
     pages = max((total + PAGE_SIZE - 1) // PAGE_SIZE, 1)
     page = min(max(page, 0), pages - 1)
