@@ -91,6 +91,12 @@ async def init_db():
             created_at   TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         );
 
+        CREATE TABLE IF NOT EXISTS pix_meta (
+            pix_id       TEXT PRIMARY KEY,
+            purchase_id  TEXT,
+            itens_json   TEXT
+        );
+
         CREATE TABLE IF NOT EXISTS gift_cards (
             code         TEXT PRIMARY KEY,
             tipo         TEXT NOT NULL,
@@ -129,6 +135,11 @@ async def init_db():
             PRIMARY KEY (user_id, product_id)
         );
 
+        CREATE TABLE IF NOT EXISTS config (
+            key TEXT PRIMARY KEY,
+            value TEXT
+        );
+
         CREATE INDEX IF NOT EXISTS idx_users_referred_by ON users(referred_by);
         CREATE INDEX IF NOT EXISTS idx_purchases_user   ON purchases(user_id);
         CREATE INDEX IF NOT EXISTS idx_purchases_prod   ON purchases(product_id);
@@ -146,8 +157,10 @@ async def init_db():
     await _try_alter("ALTER TABLE users ADD COLUMN pix_key TEXT")
     await _try_alter("ALTER TABLE users ADD COLUMN pix_name TEXT")
     await _try_alter("ALTER TABLE users ADD COLUMN pix_bank TEXT")
+    await _try_alter("ALTER TABLE users ADD COLUMN balance_web REAL DEFAULT 0")
+    await _try_alter("ALTER TABLE users ADD COLUMN age_verified INTEGER DEFAULT 0")
 
-    # ─── Coluna nova em products (imagem/thumb pra inline e banners)
+    # ─── Coluna nova em products
     await _try_alter("ALTER TABLE products ADD COLUMN image_url TEXT")
 
 
@@ -237,7 +250,6 @@ async def set_pix_key(user_id, key_type, pix_key, name=None, bank=None):
 
 async def user_stats(user_id: int) -> dict:
     """Estatísticas consolidadas para o perfil."""
-    # Compras
     cur = await _db.execute(
         "SELECT COUNT(*) AS c, COALESCE(SUM(total), 0) AS s FROM purchases WHERE user_id = ?",
         (user_id,),
@@ -246,7 +258,6 @@ async def user_stats(user_id: int) -> dict:
     compras = int(row["c"])
     gasto = float(row["s"])
 
-    # PIX inseridos (só recarga paga)
     cur = await _db.execute(
         "SELECT COALESCE(SUM(valor), 0) AS s FROM pix_pending "
         "WHERE user_id = ? AND tipo = 'recarga' AND status = 'paid'",
@@ -254,7 +265,6 @@ async def user_stats(user_id: int) -> dict:
     )
     pix_inseridos = float((await cur.fetchone())["s"])
 
-    # Gifts resgatados
     cur = await _db.execute(
         "SELECT COUNT(*) AS c, COALESCE(SUM(valor), 0) AS s FROM gift_cards "
         "WHERE redeemed_by = ?",
@@ -357,7 +367,6 @@ async def add_stock_item(product_id: int, email: str, password: str):
 
 
 async def list_available_stock(product_id: int):
-    """Lista itens de estoque ainda não usados."""
     cur = await _db.execute(
         "SELECT * FROM stock_items WHERE product_id = ? AND used = 0 ORDER BY id ASC",
         (product_id,),
@@ -370,6 +379,24 @@ async def list_available_stock(product_id: int):
 # ═══════════════════════════════════════════════
 async def create_purchase(user_id, product_id, product_name, quantity, total, email, password, days=30):
     purchase_id = str(uuid.uuid4())
+    expires = (datetime.now() + timedelta(days=days)).strftime("%Y-%m-%d %H:%M:%S")
+    await _db.execute(
+        "INSERT INTO purchases (id, user_id, product_id, product_name, quantity, total, email, password, expires_at) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        (purchase_id, user_id, product_id, product_name, quantity, total, email, password, expires),
+    )
+    await _db.commit()
+    cur = await _db.execute("SELECT * FROM purchases WHERE id = ?", (purchase_id,))
+    return dict(await cur.fetchone())
+
+
+async def create_purchase_with_id(purchase_id, user_id, product_id, product_name,
+                                  quantity, total, email, password, days=30):
+    """
+    Como create_purchase, mas usando um ID externo (ex: PURCHASE_1712345678).
+    Usado quando o pagamento vem do Mercado Pago / Web App e já tem
+    um purchase_id definido no frontend.
+    """
     expires = (datetime.now() + timedelta(days=days)).strftime("%Y-%m-%d %H:%M:%S")
     await _db.execute(
         "INSERT INTO purchases (id, user_id, product_id, product_name, quantity, total, email, password, expires_at) "
@@ -421,16 +448,17 @@ async def get_pix(pix_id):
 
 
 async def mark_pix_paid(pix_id):
-    await _db.execute("UPDATE pix_pending SET status = 'paid' WHERE id = ?", (pix_id,))
+   "),
+ await _db.execute("UPDATE pix_pending SET status = 'paid' WHERE id = ?", (pix_id,))
     await _db.commit()
 
 
 async def cancel_pix(pix_id):
-    await _db.execute("UPDATE pix_pending SET status = 'cancelled' WHERE id = ?", (pix_id,))
+    await _db.execute("UPDATE pix_pending SET status = '       cancelled' WHERE id = ?", (p ("ix_id,))
     await _db.commit()
 
 
-# ═══════════════════════════════════════════════
+# ═════════════IPTV══════════════════════════════════
 # GIFT CARDS
 # ═══════════════════════════════════════════════
 async def get_gift(code: str):
@@ -459,13 +487,11 @@ async def create_gift(code, tipo, valor=0, product_id=None):
 # AFILIADOS
 # ═══════════════════════════════════════════════
 async def affiliate_stats(user_id: int) -> dict:
-    # Quantos usuários foram indicados por ele
     cur = await _db.execute(
         "SELECT COUNT(*) AS c FROM users WHERE referred_by = ?", (user_id,)
     )
     indicados = int((await cur.fetchone())["c"])
 
-    # Total ganho em comissões
     cur = await _db.execute(
         "SELECT COALESCE(SUM(amount), 0) AS s, COUNT(*) AS c "
         "FROM affiliate_earnings WHERE affiliate_id = ?",
@@ -490,7 +516,6 @@ async def add_affiliate_earning(affiliate_id, referred_id, amount, source="recar
         (affiliate_id, referred_id, amount, source),
     )
     await _db.commit()
-    # Credita no saldo do afiliado automaticamente
     await update_balance(affiliate_id, amount)
 
 
@@ -585,7 +610,6 @@ async def top_by_gift(limit: int = 10):
 # CARRINHO ABANDONADO
 # ═══════════════════════════════════════════════
 async def save_cart_view(user_id: int, product_id: int):
-    """Salva que o usuário visualizou um produto (upsert)."""
     await _db.execute(
         "INSERT INTO cart_views (user_id, product_id, viewed_at, notified) "
         "VALUES (?, ?, CURRENT_TIMESTAMP, 0) "
@@ -597,7 +621,6 @@ async def save_cart_view(user_id: int, product_id: int):
 
 
 async def clear_cart_view(user_id: int, product_id: int):
-    """Remove o carrinho abandonado quando o usuário compra."""
     await _db.execute(
         "DELETE FROM cart_views WHERE user_id = ? AND product_id = ?",
         (user_id, product_id),
@@ -606,12 +629,6 @@ async def clear_cart_view(user_id: int, product_id: int):
 
 
 async def list_abandoned_carts(minutes: int = 5):
-    """
-    Retorna carrinhos abandonados:
-      - Viu o produto há mais de X minutos
-      - Ainda não foi notificado
-      - Não comprou depois disso
-    """
     cur = await _db.execute(
         """
         SELECT c.user_id, c.product_id, c.viewed_at
@@ -639,7 +656,7 @@ async def mark_cart_notified(user_id: int, product_id: int):
 
 
 # ═══════════════════════════════════════════════
-# SEED (popula o catálogo na 1ª execução)
+# SEED
 # ═══════════════════════════════════════════════
 async def seed_products():
     cur = await _db.execute("SELECT COUNT(*) AS c FROM products")
@@ -658,8 +675,7 @@ async def seed_products():
         ("Disney+ Plano Padrão", "Plano padrão Disney+ com catálogo completo.", 2.90, 10, "🏰"),
         ("GLOBO + CS + PREMIERE + TELECINE", "Pacote completo Globo + canais.", 5.90, 5, "📺"),
         ("GLOBOPLAY + CANAIS", "Tela (globoplay + canais) Plano Premium.", 3.90, 8, "🎬"),
-        ("HBO MAX", "Plano HBO Max completo.", 8.00, 5, "🎥"),
-        ("IPTV Elite", "+30k Conteúdos e Canais. Pacote IPTV Elite mensal.", 25.00, 10, "📡"),
+        ("HBO MAX", "Plano HBO Max completo.", 8.00, 5, "🎥 Elite", "+30k Conteúdos e Canais. Pacote IPTV Elite mensal.", 25.00, 10, "📡"),
         ("IPTV REVENDA (10 CREDITOS)", "Revenda IPTV com 10 créditos.", 50.00, 3, "💼"),
         ("IPTV Standard", "Canais Aberto e Fechado.", 15.00, 10, "📺"),
         ("NETFLIX 4K PREMIUM", "Plano Netflix 4K Premium.", 14.90, 5, "🎞"),
@@ -672,14 +688,12 @@ async def seed_products():
             (name, desc, price, stock, emoji),
         )
 
-    # 3 contas Canva de exemplo
     for i in range(1, 4):
         await _db.execute(
             "INSERT INTO stock_items (product_id, email, password) VALUES (?, ?, ?)",
             (1, f"canva_cliente{i}@larizinha.com", f"SenhaForte#{i}2026"),
         )
 
-    # Gift card de teste
     await _db.execute(
         "INSERT OR IGNORE INTO gift_cards (code, tipo, valor) VALUES (?, ?, ?)",
         ("LARI2026", "saldo", 10.00),
