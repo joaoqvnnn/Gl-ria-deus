@@ -1,6 +1,6 @@
 from urllib.parse import quote
-from telegram import InlineKeyboardButton, InlineKeyboardMarkup
-from config import CHANNEL_LINK, SUPPORT_LINK, SUPPORT_MESSAGE
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup, WebAppInfo
+from config import CHANNEL_LINK, SUPPORT_LINK, SUPPORT_MESSAGE, MINIAPP_BASE_URL
 
 
 # ═══════════════════════════════════════════════
@@ -23,10 +23,27 @@ def gate_keyboard() -> InlineKeyboardMarkup:
     ])
 
 
-def main_menu_keyboard() -> InlineKeyboardMarkup:
+def main_menu_keyboard(user_id: int | None = None) -> InlineKeyboardMarkup:
+    """
+    Menu principal.
+    Se user_id for passado, o botão 'Abrir Loja' vira Web App (abre direto).
+    """
+    # Botão "Abrir Loja"
+    if user_id:
+        loja_url = f"{MINIAPP_BASE_URL}/loja/{user_id}"
+        loja_btn = InlineKeyboardButton(
+            "🛒 Abrir Loja",
+            web_app=WebAppInfo(url=loja_url),
+        )
+    else:
+        loja_btn = InlineKeyboardButton(
+            "🛒 Abrir Loja",
+            callback_data="menu:store",
+        )
+
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("🛍 Comprar Produtos", callback_data="menu:catalog")],
-        [InlineKeyboardButton("🛒 Abrir Loja", callback_data="menu:store")],
+        [loja_btn],
         [
             InlineKeyboardButton("👤 Meu Perfil", callback_data="menu:profile"),
             InlineKeyboardButton("💠 Recarregar Saldo", callback_data="menu:topup"),
