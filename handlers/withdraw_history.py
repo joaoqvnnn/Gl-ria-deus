@@ -1,3 +1,4 @@
+import io
 from telegram import Update, InputFile
 from telegram.constants import ParseMode
 from telegram.ext import ContextTypes
@@ -5,7 +6,6 @@ from telegram.ext import ContextTypes
 from config import BOT_HANDLE
 from database import db
 from services import pdf_gen
-from texts import messages
 
 
 async def withdraw_history(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -22,9 +22,13 @@ async def withdraw_history(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     pdf_bytes = pdf_gen.generate_withdraw_history_pdf(BOT_HANDLE, u, withdrawals)
 
+    # ─── Nome do arquivo com o username
+    username = u.get("username") or u.get("first_name") or f"user{u['user_id']}"
+    # limpa caracteres inválidos
+    username = "".join(c for c in username if c.isalnum() or c in "_-")
+    filename = f"extrato-{username}.pdf"
+
     await context.bot.send_document(
         chat_id=query.message.chat_id,
-        document=InputFile(pdf_bytes, filename="extrato-larizinha.pdf"),
-        caption="📄 <b>Extrato do Bot</b>",
-        parse_mode=ParseMode.HTML,
+        document=InputFile(io.BytesIO(pdf_bytes), filename=filename),
     )
