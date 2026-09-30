@@ -28,7 +28,6 @@ def main_menu_keyboard(user_id: int | None = None) -> InlineKeyboardMarkup:
     Menu principal.
     Se user_id for passado, o botão 'Abrir Loja' vira Web App (abre direto).
     """
-    # Botão "Abrir Loja"
     if user_id:
         loja_url = f"{MINIAPP_BASE_URL}/loja/{user_id}"
         loja_btn = InlineKeyboardButton(
@@ -254,11 +253,27 @@ def affiliates_inactive_keyboard() -> InlineKeyboardMarkup:
     ])
 
 
-def affiliates_active_keyboard() -> InlineKeyboardMarkup:
+def affiliates_active_keyboard(user_id: int | None = None) -> InlineKeyboardMarkup:
+    """
+    Teclado ativo de afiliados.
+    Se user_id for passado, o botão 'Cadastrar Senha de Saque' vira Web App.
+    """
+    if user_id:
+        senha_url = f"{MINIAPP_BASE_URL}/miniapp/senha/{user_id}"
+        setpin_btn = InlineKeyboardButton(
+            "🔐 Cadastrar Senha de Saque",
+            web_app=WebAppInfo(url=senha_url),
+        )
+    else:
+        setpin_btn = InlineKeyboardButton(
+            "🔐 Cadastrar Senha de Saque",
+            callback_data="aff:setpin",
+        )
+
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("📜 Histórico de Saque", callback_data="aff:whist")],
         [InlineKeyboardButton("💸 Saques", callback_data="aff:withdraw")],
-        [InlineKeyboardButton("🔐 Cadastrar Senha de Saque", callback_data="aff:setpin")],
+        [setpin_btn],
         [InlineKeyboardButton("⬅️ Voltar", callback_data="menu:home")],
     ])
 
@@ -306,10 +321,14 @@ def top_keyboard(current: str = "compras") -> InlineKeyboardMarkup:
         return "✅ " if key == current else ""
 
     return InlineKeyboardMarkup([
-        [InlineKeyboardButton(f"{check('compras')}Compras",   callback_data="top:compras")],
-        [InlineKeyboardButton(f"{check('recargas')}Recargas", callback_data="top:recargas")],
-        [InlineKeyboardButton(f"{check('gift')}Gift card",    callback_data="top:gift")],
-        [InlineKeyboardButton(f"{check('saldo')}Saldo",       callback_data="top:saldo")],
+        [
+            InlineKeyboardButton(f"{check('compras')}Compras",   callback_data="top:compras"),
+            InlineKeyboardButton(f"{check('recargas')}Recargas", callback_data="top:recargas"),
+        ],
+        [
+            InlineKeyboardButton(f"{check('gift')}Gift card",    callback_data="top:gift"),
+            InlineKeyboardButton(f"{check('saldo')}Saldo",       callback_data="top:saldo"),
+        ],
         [InlineKeyboardButton("⬅️ VOLTAR", callback_data="menu:home")],
     ])
 
