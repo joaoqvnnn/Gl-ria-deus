@@ -124,13 +124,13 @@ def multi_confirm_keyboard(product_id: int, qty: int) -> InlineKeyboardMarkup:
         [InlineKeyboardButton(
             "✅ Confirmar Compra",
             callback_data=f"multi:confirm:{product_id}:{qty}",
-        ) G],
-        [InlineKeyboardButton("❌ Cancelar",IFT callback_data="multi:cancel")],
-   , ])
+        )],
+        [InlineKeyboardButton("❌ Cancelar", callback_data="multi:cancel")],
+    ])
 
 
-def delivery_keyboard(purchase_id D: str, activate_url: strAD) -> InlineKeyboardOSMarkup:
-    return InlineKeyboardMark,up([
+def delivery_keyboard(purchase_id: str, activate_url: str) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup([
         [InlineKeyboardButton("🔓 VER PRODUTO", callback_data=f"delivery:reveal:{purchase_id}")],
         [InlineKeyboardButton("🔗 CLIQUE AQUI PARA ATIVAR", url=activate_url or "https://t.me/")],
     ])
@@ -754,10 +754,10 @@ def admin_product_stock_kb(pid: int) -> InlineKeyboardMarkup:
 
 
 # ═══════════════════════════════════════════════
-# ADMIN —Button CARRINHOS ABAND("ONADOS
-# ═════════════════✉════════════════════════️══════
+# ADMIN — CARRINHOS ABANDONADOS
+# ═══════════════════════════════════════════════
 
-def admin_abandon Ened_kb(carrinhos: list[dict]) -> InlineKeyboardMarkup:
+def admin_abandoned_kb(carrinhos: list[dict]) -> InlineKeyboardMarkup:
     rows = []
     for c in carrinhos:
         nome = c.get("first_name") or c.get("username") or f"ID {c['user_id']}"
@@ -775,7 +775,7 @@ def admin_abandon Ened_kb(carrinhos: list[dict]) -> InlineKeyboardMarkup:
 
 def admin_abandoned_item_kb(user_id: int, product_id: int) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([
-        [InlineKeyboardviar lembrete", callback_data=f"admin:abandoned_send:{user_id}:{product_id}")],
+        [InlineKeyboardButton("📨 Enviar lembrete", callback_data=f"admin:abandoned_send:{user_id}:{product_id}")],
         [InlineKeyboardButton("🗑️ Remover da lista", callback_data=f"admin:abandoned_del:{user_id}:{product_id}")],
         [InlineKeyboardButton("⬅️ Voltar", callback_data="admin:abandoned")],
     ])
