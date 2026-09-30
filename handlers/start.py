@@ -20,6 +20,9 @@ GATE_MESSAGES: dict[int, tuple[int, int]] = {}
 PENDING_PAYLOAD: dict[int, str] = {}
 
 
+# ═══════════════════════════════════════════════
+# VERIFICA SE O USUÁRIO ESTÁ NO CANAL
+# ═══════════════════════════════════════════════
 async def is_member(context: ContextTypes.DEFAULT_TYPE, user_id: int) -> bool:
     """Verifica se o usuário está no canal obrigatório."""
     try:
@@ -35,6 +38,39 @@ async def is_member(context: ContextTypes.DEFAULT_TYPE, user_id: int) -> bool:
         return False
 
 
+# ═══════════════════════════════════════════════
+# HELPERS — MOSTRAR TELAS
+# ═══════════════════════════════════════════════
+async def _show_welcome(
+    context: ContextTypes.DEFAULT_TYPE,
+    chat_id: int,
+    user: dict,
+    via_edit_message_id: int | None = None,
+):
+    text = messages.welcome_text(user)
+    kb = menus.main_menu_keyboard()
+
+    if via_edit_message_id:
+        try:
+            await context.bot.edit_message_text(
+                chat_id=chat_id,
+                message_id=via_edit_message_id,
+                text=text,
+                reply_markup=kb,
+                parse_mode=ParseMode.HTML,
+            )
+            return
+        except TelegramError as e:
+            logger.warning("Não consegui editar msg do gate: %s", e)
+
+    await context.bot.send_message(
+        chat_id=chat_id,
+        text=text,
+        reply_markup=kb,
+        parse_mode=ParseMode.HTML,
+    )
+
+
 async def _handle_payload(
     context: ContextTypes.DEFAULT_TYPE,
     chat_id: int,
@@ -43,7 +79,7 @@ async def _handle_payload(
     via_edit_message_id: int | None = None,
 ):
     """
-    Executa a ação do payload.
+    Executa a ação do payload (deep link).
     Se `via_edit_message_id` for passado, EDITA a mensagem do Gate.
     Caso contrário, ENVIA uma nova mensagem.
     """
@@ -108,37 +144,13 @@ async def _handle_payload(
         )
         return
 
-    # ─── Payload desconhecido → menu principal normal
+    # ─── Payload desconhecido → menu normal
     await _show_welcome(context, chat_id, user, via_edit_message_id)
 
 
-async def _show_welcome(
-    context: ContextTypes.DEFAULT_TYPE,
-    chat_id: int,
-    user: dict,
-    via_edit_message_id: int | None = None,
-):
-    text = messages.welcome_text(user)
-    kb = menus.main_menu_keyboard()
-
-    if via_edit_message_id:
-        try:
-            await context.bot.edit_message_text(
-                chat_id=chat_id,
-                message_id=via_edit_message_id,
-                text=text,
-                reply_markup=kb,
-                parse_mode=ParseMode.HTML,
-            )
-            return
-        except TelegramError:
-            pass
-
-    await context.bot.send_message(
-        chat_id=chat_id, text=text, reply_markup=kb, parse_mode=ParseMode.HTML
-    )
-
-
+# ═══════════════════════════════════════════════
+# /start
+# ═══════════════════════════════════════════════
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Comando /start — suporta deep link via context.args."""
     user = update.effective_user
@@ -163,20 +175,34 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # ─── Já está no canal: processa o payload
     if payload:
-        # Se for referral, salva no banco antes de mostrar qualquer coisa
         await _handle_payload(context, update.effective_chat.id, u, payload)
     else:
         await _show_welcome(context, update.effective_chat.id, u)
 
 
+# ═══════════════════════════════════════════════
+# DETECÇÃO DE ENTRADA NO CANAL
+# ═══════════════════════════════════════════════
 async def chat_member_update(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Detecta quando o usuário entra no canal → EDITA a mensagem de bloqueio."""
+    """
+    Detecta quando o usuário entra no canal → EDITA a mensagem de bloqueio
+    para o Menu Principal.
+    """
     cmu = update.chat_member
     if not cmu:
         return
 
     old_status = cmu.old_chat_member.status
     new_status = cmu.new_chat_member.status
+
+    # ─── LOG de debug (útil para diagnosticar)
+    logger.info(
+        "ChatMember recebido: user=%s old=%s new=%s chat=%s",
+        cmu.from_user.id,
+        old_status,
+        new_status,
+        cmu.chat.id,
+    )
 
     entrou = (
         old_status in (ChatMemberStatus.LEFT, ChatMemberStatus.BANNED)
@@ -193,6 +219,7 @@ async def chat_member_update(update: Update, context: ContextTypes.DEFAULT_TYPE)
     user_id = cmu.from_user.id
     entry = GATE_MESSAGES.pop(user_id, None)
     if not entry:
+        logger.info("ChatMember: usuário %s entrou, mas sem msg de gate guardada.", user_id)
         return
 
     chat_id, message_id = entry
