@@ -1,12 +1,22 @@
 """
-Módulo ADMIN — TRANSMISSÃO (v2 — completo).
-Suporta: preview, agendamento, progresso, rascunhos, histórico.
+Módulo ADMIN — TRANSMISSÃO v2 (broadcast completo).
+
+Funcionalidades:
+  • Menu com resumo (agendadas, rascunhos, enviadas)
+  • Segmentos: todos / compradores / inativos 7d / sem saldo
+  • Preview antes de enviar
+  • Botões inline customizáveis
+  • Envio em background com progresso
+  • Agendamento (5min, 30min, 1h, 6h, 1d, custom)
+  • Salvar rascunhos
+  • Cancelar agendamento
+  • Histórico com estatísticas
 """
 import asyncio
 import logging
-import io
+import re
 from datetime import datetime, timedelta
-from telegram import Update, ForceReply, InputFile
+from telegram import Update, ForceReply
 from telegram.constants import ParseMode
 from telegram.ext import ContextTypes
 
@@ -17,13 +27,12 @@ from keyboards import menus
 logger = logging.getLogger(__name__)
 
 SEGMENTOS = {
-    "todos": "📢 Todos os usuários",
+    "todos":       "📢 Todos os usuários",
     "compradores": "🛒 Apenas compradores",
-    "inativos": "💤 Inativos 7d+",
-    "sem_saldo": "📭 Sem saldo",
+    "inativos":    "💤 Inativos 7d+",
+    "sem_saldo":   "📭 Sem saldo",
 }
 
-# Progresso é atualizado a cada N envios (pra não floodar)
 PROGRESS_EVERY = 25
 
 
@@ -35,7 +44,10 @@ async def _edit_or_send(query, text: str, kb=None):
     try:
         await query.edit_message_text(text, reply_markup=kb, parse_mode=ParseMode.HTML)
     except Exception:
-        await query.message.reply_text(text, reply_markup=kb, parse_mode=ParseMode.HTML)
+        try:
+            await query.message.reply_text(text, reply_markup=kb, parse_mode=ParseMode.HTML)
+        except Exception:
+            pass
 
 
 # ═══════════════════════════════════════════════
@@ -65,7 +77,7 @@ async def admin_bc_v2_menu_cb(update: Update, context: ContextTypes.DEFAULT_TYPE
 
 
 # ═══════════════════════════════════════════════
-# NOVA — escolher segmento
+# NOVA TRANSMISSÃO — escolher segmento
 # ═══════════════════════════════════════════════
 async def admin_bc_v2_nova_cb(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -73,9 +85,10 @@ async def admin_bc_v2_nova_cb(update: Update, context: ContextTypes.DEFAULT_TYPE
     if not is_admin(update.effective_user.id):
         return
 
-    # limpa qualquer wizard anterior
+    # Limpa wizard anterior
     for k in ("bc_texto", "bc_midia_id", "bc_midia_tipo", "bc_segmento",
-              "bc_botoes", "bc_preview_id"):
+              "bc_botoes", "bc_preview_id", "bc_aguardando_conteudo",
+              "bc_sch_custom", "bc_prompt_id", "bc_prompt_chat"):
         context.user_data.pop(k, None)
 
     texto = (
@@ -92,14 +105,18 @@ async def admin_bc_v2_segment_cb(update: Update, context: ContextTypes.DEFAULT_T
     if not is_admin(update.effective_user.id):
         return
 
-    seg = query.data.split(":")[2]
+    try:
+        seg = query.data.split(":")[2]
+    except IndexError:
+        return
+
     context.user_data["bc_segmento"] = seg
 
-    # Conta destinos
     try:
         ids = await db.bc_segment_user_ids(seg)
         total = len(ids)
-    except Exception:
+    except Exception as e:
+        logger.exception("Erro contando destinatários: %s", e)
         total = 0
 
     seg_label = SEGMENTOS.get(seg, seg)
@@ -114,17 +131,17 @@ async def admin_bc_v2_segment_cb(update: Update, context: ContextTypes.DEFAULT_T
         "├ 📝 Só <b>texto</b> (aceita HTML)\n"
         "├ 🖼 <b>Foto</b> com legenda\n"
         "└ 🎥 <b>Vídeo</b> com legenda\n\n"
-        "💡 Para adicionar botões, envie: <code>+botao|Texto do botão|acao</code>\n"
+        "💡 Para adicionar botões inline, inclua uma linha:\n"
+        "<code>+botao|Texto do botão|acao</code>\n"
         "Exemplo: <code>+botao|Comprar agora|direct:catalog</code>\n\n"
         "Envie <code>/cancelar</code> para sair."
     )
 
     context.user_data["bc_aguardando_conteudo"] = True
+    context.user_data["bc_prompt_id"] = query.message.message_id
+    context.user_data["bc_prompt_chat"] = query.message.chat_id
 
-    try:
-        await query.edit_message_text(texto, parse_mode=ParseMode.HTML)
-    except Exception:
-        pass
+    await _edit_or_send(query, texto)
 
 
 # ═══════════════════════════════════════════════
@@ -136,14 +153,16 @@ async def admin_bc_v2_content_handler(update: Update, context: ContextTypes.DEFA
     if not is_admin(update.effective_user.id):
         return
 
-    texto = update.message.text or update.message.caption or ""
+    texto_raw = update.message.text or update.message.caption or ""
 
-    if texto.startswith("/"):
+    # Cancelar
+    if texto_raw.startswith("/"):
         context.user_data.pop("bc_aguardando_conteudo", None)
         context.user_data.pop("bc_segmento", None)
         await update.message.reply_text("❌ Cancelado.")
         return
 
+    # Detecta mídia
     midia_id = None
     midia_tipo = None
 
@@ -154,36 +173,42 @@ async def admin_bc_v2_content_handler(update: Update, context: ContextTypes.DEFA
         midia_id = update.message.video.file_id
         midia_tipo = "video"
 
-    # Guarda
-    context.user_data["bc_texto"] = texto
+    # Extrai botões da mensagem (+botao|Texto|acao)
+    texto_limpo, botoes = _extrai_botoes(texto_raw)
+
+    if not texto_limpo.strip() and not midia_id:
+        await update.message.reply_text("❌ Envie um texto, foto ou vídeo.")
+        return
+
+    context.user_data["bc_texto"] = texto_limpo
     context.user_data["bc_midia_id"] = midia_id
     context.user_data["bc_midia_tipo"] = midia_tipo
+    context.user_data["bc_botoes"] = botoes
+    context.user_data.pop("bc_aguardando_conteudo", None)
 
     # Cria rascunho no banco pra preview
     try:
         bc_id = await db.bc_create(
             segmento=context.user_data.get("bc_segmento", "todos"),
-            texto=texto,
+            texto=texto_limpo,
             midia_id=midia_id,
             midia_tipo=midia_tipo,
-            botoes=context.user_data.get("bc_botoes") or [],
+            botoes=botoes,
             created_by=update.effective_user.id,
         )
         context.user_data["bc_preview_id"] = bc_id
     except Exception as e:
         logger.exception("Erro criando rascunho: %s", e)
 
-    context.user_data.pop("bc_aguardando_conteudo", None)
-
     await _mostrar_preview(update, context)
 
 
 async def _mostrar_preview(update, context):
-    """Mostra preview do que vai ser enviado."""
     texto = context.user_data.get("bc_texto") or ""
     midia = context.user_data.get("bc_midia_id")
     tipo = context.user_data.get("bc_midia_tipo")
     seg = context.user_data.get("bc_segmento") or "todos"
+    botoes = context.user_data.get("bc_botoes") or []
 
     try:
         ids = await db.bc_segment_user_ids(seg)
@@ -198,6 +223,12 @@ async def _mostrar_preview(update, context):
         else "📝 Texto"
     )
 
+    botoes_txt = ""
+    if botoes:
+        botoes_txt = "\n\n🔘 <b>Botões (" + str(len(botoes)) + "):</b>\n"
+        for b in botoes:
+            botoes_txt += f"├ {b.get('text', '?')}\n"
+
     preview_text = (
         "👁 <b>Pré-visualização</b>\n"
         "━━━━━━━━━━━━━━━━━━━━━━━\n\n"
@@ -207,13 +238,14 @@ async def _mostrar_preview(update, context):
         "📄 <b>Conteúdo:</b>\n"
         "╭─────────────────╮\n"
         f"{texto or '<i>(sem texto)</i>'}\n"
-        "╰─────────────────╯\n\n"
+        "╰─────────────────╯"
+        f"{botoes_txt}\n\n"
         "Passo <b>3/3</b> — Confirme:"
     )
 
     chat_id = update.effective_chat.id
 
-    # Se tem mídia, manda a mídia primeiro
+    # Envia prévia da mídia se tiver
     if midia and tipo == "photo":
         try:
             await context.bot.send_photo(
@@ -255,7 +287,6 @@ async def admin_bc_v2_send_now_cb(update: Update, context: ContextTypes.DEFAULT_
         await query.answer("Preview expirado.", show_alert=True)
         return
 
-    # Dispara em background
     asyncio.create_task(_executar_transmissao(context.bot, bc_id, query.message.chat_id))
 
     try:
@@ -267,12 +298,16 @@ async def admin_bc_v2_send_now_cb(update: Update, context: ContextTypes.DEFAULT_
     except Exception:
         pass
 
+    # Limpa estado
+    for k in ("bc_texto", "bc_midia_id", "bc_midia_tipo", "bc_segmento",
+              "bc_botoes", "bc_preview_id", "bc_prompt_id", "bc_prompt_chat"):
+        context.user_data.pop(k, None)
+
 
 # ═══════════════════════════════════════════════
 # EXECUTAR TRANSMISSÃO (background)
 # ═══════════════════════════════════════════════
 async def _executar_transmissao(bot, bc_id: str, chat_id: int):
-    """Roda em background. Atualiza progresso periodicamente."""
     bc = await db.bc_get(bc_id)
     if not bc:
         return
@@ -281,6 +316,15 @@ async def _executar_transmissao(bot, bc_id: str, chat_id: int):
     texto = bc.get("texto") or ""
     midia = bc.get("midia_id")
     tipo = bc.get("midia_tipo")
+    botoes = bc.get("botoes") or []
+
+    # Monta teclado inline
+    kb = None
+    if botoes:
+        try:
+            kb = menus.direct_custom_keyboard(botoes)
+        except Exception:
+            kb = None
 
     try:
         ids = await db.bc_segment_user_ids(seg)
@@ -300,6 +344,7 @@ async def _executar_transmissao(bot, bc_id: str, chat_id: int):
     )
 
     # Mensagem de progresso
+    progress_msg = None
     try:
         progress_msg = await bot.send_message(
             chat_id=chat_id,
@@ -307,7 +352,7 @@ async def _executar_transmissao(bot, bc_id: str, chat_id: int):
             parse_mode=ParseMode.HTML,
         )
     except Exception:
-        progress_msg = None
+        pass
 
     enviados = 0
     falhas = 0
@@ -317,23 +362,23 @@ async def _executar_transmissao(bot, bc_id: str, chat_id: int):
             if tipo == "photo":
                 await bot.send_photo(
                     chat_id=uid, photo=midia, caption=texto,
-                    parse_mode=ParseMode.HTML,
+                    reply_markup=kb, parse_mode=ParseMode.HTML,
                 )
             elif tipo == "video":
                 await bot.send_video(
                     chat_id=uid, video=midia, caption=texto,
-                    parse_mode=ParseMode.HTML,
+                    reply_markup=kb, parse_mode=ParseMode.HTML,
                 )
             else:
                 await bot.send_message(
-                    chat_id=uid, text=texto, parse_mode=ParseMode.HTML,
-                    disable_web_page_preview=False,
+                    chat_id=uid, text=texto,
+                    reply_markup=kb, parse_mode=ParseMode.HTML,
                 )
             enviados += 1
         except Exception:
             falhas += 1
 
-        # Atualiza progresso a cada N
+        # Atualiza progresso
         if progress_msg and (i + 1) % PROGRESS_EVERY == 0:
             pct = ((i + 1) / total) * 100 if total else 0
             try:
@@ -352,7 +397,7 @@ async def _executar_transmissao(bot, bc_id: str, chat_id: int):
             except Exception:
                 pass
 
-        # Delay pra não estourar rate limit (30 msgs/seg)
+        # Rate limit
         await asyncio.sleep(0.05)
 
     # Final
@@ -383,15 +428,6 @@ async def _executar_transmissao(bot, bc_id: str, chat_id: int):
         except Exception:
             pass
 
-    # Limpa wizard
-    try:
-        await bot.send_message(
-            chat_id=chat_id,
-            text="🔄 Rascunho removido automaticamente.",
-        )
-    except Exception:
-        pass
-
 
 # ═══════════════════════════════════════════════
 # AGENDAR
@@ -404,17 +440,15 @@ async def admin_bc_v2_schedule_cb(update: Update, context: ContextTypes.DEFAULT_
 
     bc_id = context.user_data.get("bc_preview_id")
     if not bc_id:
-        await query.answer("Preview expirado.", show_alert=True)
+        await query.answer("Preview expirado. Crie uma nova transmissão.", show_alert=True)
         return
 
-    texto = (
-        "📅 <b>Agendar Transmissão</b>\n"
-        "━━━━━━━━━━━━━━━━━━━━━━━\n\n"
-        "Escolha quando enviar:"
-    )
     try:
         await query.edit_message_text(
-            texto, reply_markup=menus.admin_bc_v2_schedule_kb(),
+            "📅 <b>Agendar Transmissão</b>\n"
+            "━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+            "Escolha quando enviar:",
+            reply_markup=menus.admin_bc_v2_schedule_kb(),
             parse_mode=ParseMode.HTML,
         )
     except Exception:
@@ -429,9 +463,13 @@ async def admin_bc_v2_sch_choice_cb(update: Update, context: ContextTypes.DEFAUL
 
     bc_id = context.user_data.get("bc_preview_id")
     if not bc_id:
+        await query.answer("Preview expirado.", show_alert=True)
         return
 
-    escolha = query.data.split(":")[2]
+    try:
+        escolha = query.data.split(":")[2]
+    except IndexError:
+        return
 
     if escolha == "custom":
         context.user_data["bc_sch_custom"] = True
@@ -448,7 +486,8 @@ async def admin_bc_v2_sch_choice_cb(update: Update, context: ContextTypes.DEFAUL
             pass
         return
 
-    minutos = {"5min": 5, "30min": 30, "1h": 60, "6h": 360, "1d": 1440}[escolha]
+    minutos_map = {"5min": 5, "30min": 30, "1h": 60, "6h": 360, "1d": 1440}
+    minutos = minutos_map.get(escolha, 30)
 
     agendado = (datetime.now() + timedelta(minutes=minutos)).strftime("%Y-%m-%d %H:%M:%S")
     await db.bc_update(bc_id, status="scheduled", agendado_para=agendado)
@@ -457,7 +496,10 @@ async def admin_bc_v2_sch_choice_cb(update: Update, context: ContextTypes.DEFAUL
         update.effective_user.id, "bc_schedule", bc_id, f"em {escolha}",
     )
 
-    context.user_data.pop("bc_preview_id", None)
+    # Limpa estado
+    for k in ("bc_texto", "bc_midia_id", "bc_midia_tipo", "bc_segmento",
+              "bc_botoes", "bc_preview_id", "bc_prompt_id", "bc_prompt_chat"):
+        context.user_data.pop(k, None)
 
     try:
         await query.edit_message_text(
@@ -478,13 +520,19 @@ async def admin_bc_v2_sch_custom_handler(update: Update, context: ContextTypes.D
         return
 
     texto = (update.message.text or "").strip().lower()
-    context.user_data.pop("bc_sch_custom", None)
+
+    try:
+        await update.message.delete()
+    except Exception:
+        pass
 
     if texto.startswith("/"):
+        context.user_data.pop("bc_sch_custom", None)
         return
 
-    # Parse simples
-    import re
+    context.user_data.pop("bc_sch_custom", None)
+
+    # Parse do tempo
     total_min = 0
     for m in re.finditer(r"(\d+)\s*(d|h|min|m)?", texto):
         n = int(m.group(1))
@@ -498,13 +546,15 @@ async def admin_bc_v2_sch_custom_handler(update: Update, context: ContextTypes.D
 
     if total_min <= 0:
         await update.message.reply_text(
-            "❌ Formato inválido.\n\nExemplos: <code>30 min</code>, <code>2h</code>, <code>1d</code>",
+            "❌ Formato inválido.\n\n"
+            "Exemplos: <code>30 min</code>, <code>2h</code>, <code>1d</code>",
             parse_mode=ParseMode.HTML,
         )
         return
 
     bc_id = context.user_data.get("bc_preview_id")
     if not bc_id:
+        await update.message.reply_text("❌ Preview expirado.")
         return
 
     agendado = (datetime.now() + timedelta(minutes=total_min)).strftime("%Y-%m-%d %H:%M:%S")
@@ -514,7 +564,9 @@ async def admin_bc_v2_sch_custom_handler(update: Update, context: ContextTypes.D
         update.effective_user.id, "bc_schedule_custom", bc_id, f"{total_min} min",
     )
 
-    context.user_data.pop("bc_preview_id", None)
+    for k in ("bc_texto", "bc_midia_id", "bc_midia_tipo", "bc_segmento",
+              "bc_botoes", "bc_preview_id", "bc_prompt_id", "bc_prompt_chat"):
+        context.user_data.pop(k, None)
 
     await update.message.reply_text(
         f"✅ <b>Agendada!</b>\n\n"
@@ -539,9 +591,13 @@ async def admin_bc_v2_save_draft_cb(update: Update, context: ContextTypes.DEFAUL
         await query.answer("Preview expirado.", show_alert=True)
         return
 
-    context.user_data.pop("bc_preview_id", None)
+    # Já está como 'draft' no banco (bc_create salva como draft)
 
     await db.log_admin_action(update.effective_user.id, "bc_save_draft", bc_id)
+
+    for k in ("bc_texto", "bc_midia_id", "bc_midia_tipo", "bc_segmento",
+              "bc_botoes", "bc_preview_id", "bc_prompt_id", "bc_prompt_chat"):
+        context.user_data.pop(k, None)
 
     try:
         await query.edit_message_text(
@@ -568,7 +624,8 @@ async def admin_bc_v2_cancel_cb(update: Update, context: ContextTypes.DEFAULT_TY
             pass
 
     for k in ("bc_texto", "bc_midia_id", "bc_midia_tipo", "bc_segmento",
-              "bc_botoes", "bc_aguardando_conteudo", "bc_sch_custom"):
+              "bc_botoes", "bc_aguardando_conteudo", "bc_sch_custom",
+              "bc_prompt_id", "bc_prompt_chat"):
         context.user_data.pop(k, None)
 
     try:
@@ -581,8 +638,25 @@ async def admin_bc_v2_cancel_cb(update: Update, context: ContextTypes.DEFAULT_TY
         pass
 
 
+async def admin_bc_v2_preview_back_cb(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Volta do preview pra escolha de segmento."""
+    query = update.callback_query
+    await query.answer()
+    if not is_admin(update.effective_user.id):
+        return
+
+    bc_id = context.user_data.pop("bc_preview_id", None)
+    if bc_id:
+        try:
+            await db.bc_delete(bc_id)
+        except Exception:
+            pass
+
+    await admin_bc_v2_nova_cb(update, context)
+
+
 # ═══════════════════════════════════════════════
-# LISTAS (agendadas, rascunhos, histórico)
+# LISTAS
 # ═══════════════════════════════════════════════
 async def admin_bc_v2_agendadas_cb(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -641,7 +715,11 @@ async def admin_bc_v2_view_cb(update: Update, context: ContextTypes.DEFAULT_TYPE
     if not is_admin(update.effective_user.id):
         return
 
-    bc_id = query.data.split(":", 2)[2]
+    try:
+        bc_id = query.data.split(":", 2)[2]
+    except IndexError:
+        return
+
     bc = await db.bc_get(bc_id)
     if not bc:
         await query.answer("Não encontrado.", show_alert=True)
@@ -705,7 +783,10 @@ async def admin_bc_v2_force_send_cb(update: Update, context: ContextTypes.DEFAUL
     if not is_admin(update.effective_user.id):
         return
 
-    bc_id = query.data.split(":", 2)[2]
+    try:
+        bc_id = query.data.split(":", 2)[2]
+    except IndexError:
+        return
 
     asyncio.create_task(_executar_transmissao(context.bot, bc_id, query.message.chat_id))
 
@@ -724,7 +805,11 @@ async def admin_bc_v2_cancel_sched_cb(update: Update, context: ContextTypes.DEFA
     if not is_admin(update.effective_user.id):
         return
 
-    bc_id = query.data.split(":", 2)[2]
+    try:
+        bc_id = query.data.split(":", 2)[2]
+    except IndexError:
+        return
+
     await db.bc_update(bc_id, status="cancelled")
     await db.log_admin_action(update.effective_user.id, "bc_cancel", bc_id)
 
@@ -739,7 +824,11 @@ async def admin_bc_v2_del_cb(update: Update, context: ContextTypes.DEFAULT_TYPE)
     if not is_admin(update.effective_user.id):
         return
 
-    bc_id = query.data.split(":", 2)[2]
+    try:
+        bc_id = query.data.split(":", 2)[2]
+    except IndexError:
+        return
+
     await db.bc_delete(bc_id)
     await db.log_admin_action(update.effective_user.id, "bc_del", bc_id)
 
@@ -748,11 +837,90 @@ async def admin_bc_v2_del_cb(update: Update, context: ContextTypes.DEFAULT_TYPE)
     )
 
 
+async def admin_bc_v2_sched_draft_cb(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Agenda um rascunho já existente."""
+    query = update.callback_query
+    await query.answer()
+    if not is_admin(update.effective_user.id):
+        return
+
+    try:
+        bc_id = query.data.split(":", 2)[2]
+    except IndexError:
+        return
+
+    context.user_data["bc_preview_id"] = bc_id
+
+    bc = await db.bc_get(bc_id)
+    if not bc:
+        await query.answer("Rascunho não encontrado.", show_alert=True)
+        return
+
+    context.user_data["bc_segmento"] = bc.get("segmento") or "todos"
+    context.user_data["bc_texto"] = bc.get("texto") or ""
+    context.user_data["bc_midia_id"] = bc.get("midia_id")
+    context.user_data["bc_midia_tipo"] = bc.get("midia_tipo")
+    context.user_data["bc_botoes"] = bc.get("botoes") or []
+
+    try:
+        await query.edit_message_text(
+            "📅 <b>Agendar Transmissão</b>\n"
+            "━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+            "Escolha quando enviar:",
+            reply_markup=menus.admin_bc_v2_schedule_kb(),
+            parse_mode=ParseMode.HTML,
+        )
+    except Exception:
+        pass
+
+
 # ═══════════════════════════════════════════════
-# JOB — RODA A CADA 30s CHECANDO AGENDADAS
+# HELPERS
+# ═══════════════════════════════════════════════
+def _extrai_botoes(texto: str) -> tuple[str, list[list[dict]]]:
+    """
+    Extrai linhas tipo:
+        +botao|Texto do botão|acao
+        +botao|Outro botão|direct:product:3|url=https://x.com
+
+    Retorna (texto_sem_botoes, botoes_estrutura)
+    """
+    linhas_limpas = []
+    botoes_flat = []
+
+    for linha in (texto or "").splitlines():
+        stripped = linha.strip()
+        if stripped.lower().startswith("+botao|"):
+            partes = stripped.split("|", 1)[1]
+            partes_arr = partes.split("|")
+
+            if len(partes_arr) < 2:
+                continue
+
+            botao_texto = partes_arr[0].strip()
+            alvo = partes_arr[1].strip()
+
+            b = {"text": botao_texto}
+            if alvo.startswith("http://") or alvo.startswith("https://"):
+                b["url"] = alvo
+            else:
+                b["action"] = alvo
+
+            botoes_flat.append(b)
+        else:
+            linhas_limpas.append(linha)
+
+    # Cada botão em sua própria linha (formato 1 por linha)
+    botoes_estrutura = [[b] for b in botoes_flat]
+
+    return "\n".join(linhas_limpas).strip(), botoes_estrutura
+
+
+# ═══════════════════════════════════════════════
+# JOB — CHECA AGENDADAS
 # ═══════════════════════════════════════════════
 async def check_scheduled_broadcasts(context: ContextTypes.DEFAULT_TYPE):
-    """Job que roda a cada 30s."""
+    """Job que roda a cada 30s checando agendadas."""
     try:
         devidos = await db.bc_scheduled_due()
     except Exception as e:
@@ -762,9 +930,13 @@ async def check_scheduled_broadcasts(context: ContextTypes.DEFAULT_TYPE):
     for bc in devidos:
         try:
             bc_id = bc["id"]
-            created_by = bc.get("created_by") or (ADMIN_IDS[0] if ADMIN_IDS else None)
+            created_by = bc.get("created_by")
+
             if not created_by:
-                continue
+                if ADMIN_IDS:
+                    created_by = ADMIN_IDS[0]
+                else:
+                    continue
 
             logger.info("Disparando transmissão agendada %s", bc_id)
             asyncio.create_task(
