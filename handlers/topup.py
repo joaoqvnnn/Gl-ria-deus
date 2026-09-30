@@ -183,7 +183,7 @@ async def topup_check(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 # ═══════════════════════════════════════════════
-# ❌ CANCELAR
+# ❌ CANCELAR (recarga) — REMOVE A IMAGEM
 # ═══════════════════════════════════════════════
 async def topup_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -191,9 +191,19 @@ async def topup_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     pix_id = query.data.split(":", 2)[2]
     await db.cancel_pix(pix_id)
 
+    chat_id = query.message.chat_id
+
+    # 1) Deleta a mensagem do QR Code (imagem)
     try:
-        await query.edit_message_caption(
-            caption=messages.topup_cancelled_text(),
+        await query.delete_message()
+    except Exception:
+        pass
+
+    # 2) Envia uma nova mensagem só de texto
+    try:
+        await context.bot.send_message(
+            chat_id=chat_id,
+            text="❌ <b>Recarga cancelada.</b>",
             parse_mode=ParseMode.HTML,
         )
     except Exception:
