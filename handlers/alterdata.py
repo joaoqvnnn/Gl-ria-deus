@@ -4,13 +4,11 @@ from telegram.constants import ParseMode
 from telegram.ext import ContextTypes
 
 from database import db
+from handlers import _state
 from keyboards import menus
 from texts import messages
 
 
-# ═══════════════════════════════════════════════
-# ✏️ ABRIR MENU DE ALTERAR DADOS
-# ═══════════════════════════════════════════════
 async def alter_open(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -18,63 +16,63 @@ async def alter_open(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     u = await db.get_or_create_user(user.id, user.username, user.first_name)
 
-    await query.edit_message_text(
-        messages.alter_data_text(u),
-        reply_markup=menus.alter_data_keyboard(u),
-        parse_mode=ParseMode.HTML,
-    )
-
-
-# ═══════════════════════════════════════════════
-# ✏️ PEDIR WHATSAPP — ForceReply direto no edit
-# ═══════════════════════════════════════════════
-async def alter_whatsapp(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
-
-    context.user_data["awaiting_whatsapp"] = True
-
     try:
         await query.edit_message_text(
-            messages.whatsapp_prompt_text(),
-            reply_markup=ForceReply(selective=True),
+            messages.alter_data_text(u),
+            reply_markup=menus.alter_data_keyboard(u),
             parse_mode=ParseMode.HTML,
         )
     except Exception:
         pass
 
 
-# ═══════════════════════════════════════════════
-# ✏️ RECEBE O WHATSAPP
-# ═══════════════════════════════════════════════
+async def alter_whatsapp(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+
+    _state.set_state(context.user_data, "awaiting_whatsapp")
+
+    try:
+        await query.edit_message_text(
+            messages.whatsapp_prompt_text(),
+            reply_markup=menus.alter_data_cancel_keyboard(),
+            parse_mode=ParseMode.HTML,
+        )
+    except Exception:
+        pass
+
+    try:
+        await context.bot.send_message(
+            chat_id=query.message.chat_id,
+            text="Digite abaixo 👇",
+            reply_markup=ForceReply(selective=True),
+        )
+    except Exception:
+        pass
+
+
 async def whatsapp_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not context.user_data.get("awaiting_whatsapp"):
+    if not _state.is_set(context.user_data, "awaiting_whatsapp"):
         return
 
     text = (update.message.text or "").strip()
     user = update.effective_user
     u = await db.get_or_create_user(user.id, user.username, user.first_name)
 
-    # Comando /start durante o fluxo → bloqueia
-    if text.startswith("/start"):
-        await update.message.reply_text(
-            "⚠️ Você está no meio do cadastro de WhatsApp.\n"
-            "Envie um número válido ou <code>remover</code>.",
-            parse_mode=ParseMode.HTML,
-        )
+    if text.startswith("/start") or text.startswith("/cancelar"):
+        _state.clear_all(context.user_data)
+        await update.message.reply_text("❌ Operação cancelada.", parse_mode=ParseMode.HTML)
         return
 
-    # Remover
     if text.lower() == "remover":
         await db.set_whatsapp(user.id, None)
-        context.user_data.pop("awaiting_whatsapp", None)
+        _state.clear_all(context.user_data)
         await update.message.reply_text(
             messages.whatsapp_removed_text(),
             parse_mode=ParseMode.HTML,
         )
         return
 
-    # Validação: só dígitos, 10 ou 11 dígitos
     digits = re.sub(r"\D", "", text)
     if not (10 <= len(digits) <= 11):
         await update.message.reply_text(
@@ -84,7 +82,7 @@ async def whatsapp_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     await db.set_whatsapp(user.id, digits)
-    context.user_data.pop("awaiting_whatsapp", None)
+    _state.clear_all(context.user_data)
 
     await update.message.reply_text(
         messages.whatsapp_updated_text(digits),
