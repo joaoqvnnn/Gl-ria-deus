@@ -1,22 +1,19 @@
-import os
+"""
+Integração com o Mercado Pago — gera PIX real e consulta status.
+"""
+import logging
 import mercadopago
-from config import (
-    MERCADOPAGO_ACCESS_TOKEN,
-    MERCADOPAGO_WEBHOOK_URL,
-)
+from config import MERCADOPAGO_ACCESS_TOKEN, MERCADOPAGO_WEBHOOK_URL
 
-# Inicializa o SDK
-sdk = mercadopago.SDK(MERCADOPAGO_ACCESS_TOKEN)
+logger = logging.getLogger(__name__)
+
+_sdk = mercadopago.SDK(MERCADOPAGO_ACCESS_TOKEN)
 
 
-def criar_pagamento_pix(valor: float, descricao: str, user_id: int, purchase_id: str):
+def criar_pix(valor: float, descricao: str, user_id: int, purchase_id: str) -> dict:
     """
     Cria um pagamento PIX no Mercado Pago.
-    Retorna um dicionário com:
-      - payment_id
-      - qr_code (base64)
-      - qr_code_text (copia e cola)
-      - status
+    Retorna: { payment_id, status, qr_code_base64, qr_code_text, ticket_url }
     """
     payment_data = {
         "transaction_amount": float(valor),
@@ -34,26 +31,26 @@ def criar_pagamento_pix(valor: float, descricao: str, user_id: int, purchase_id:
         "x-idempotency-key": purchase_id,  # evita duplicidade
     }
 
-    result = sdk.payment().create(payment_data, request_options)
-    payment = result["response"]
+    result = _sdk.payment().create(payment_data, request_options)
+    payment = result.get("response", {})
 
     if payment.get("status") not in ("pending", "in_process"):
-        raise Exception(f"Erro ao criar pagamento: {payment}")
+        logger.error("Falha ao criar pagamento MP: %s", payment)
+        raise Exception(f"Erro MP: {payment.get('message', 'sem detalhes')}")
 
-    # Dados do PIX
-    point_of_interaction = payment.get("point_of_interaction", {})
-    transaction_data = point_of_interaction.get("transaction_data", {})
+    poi = payment.get("point_of_interaction", {})
+    tx  = poi.get("transaction_data", {})
 
     return {
-        "payment_id": payment["id"],
-        "status": payment["status"],
-        "qr_code": transaction_data.get("qr_code_base64"),
-        "qr_code_text": transaction_data.get("qr_code"),
-        "ticket_url": transaction_data.get("ticket_url"),
+        "payment_id":      payment["id"],
+        "status":          payment["status"],
+        "qr_code_base64":  tx.get("qr_code_base64"),
+        "qr_code_text":    tx.get("qr_code"),
+        "ticket_url":      tx.get("ticket_url"),
     }
 
 
-def consultar_pagamento(payment_id: int):
-    """Consulta o status de um pagamento no Mercado Pago."""
-    result = sdk.payment().get(payment_id)
-    return result["response"]
+def consultar_pagamento(payment_id: int) -> dict:
+    """Consulta o status de um pagamento pelo ID."""
+    result = _sdk.payment().get(payment_id)
+    return result.get("response", {})
