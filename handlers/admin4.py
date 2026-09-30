@@ -94,7 +94,6 @@ async def _show_products_page(query, context, page: int = 0):
 
     produtos = await db.admin_all_products(limit=PAGE_SIZE, offset=offset)
 
-    # Resumo rápido
     ativos = sum(1 for p in produtos if p.get("active"))
     estoque_total = sum(int(p.get("stock") or 0) for p in produtos)
 
@@ -192,7 +191,6 @@ async def admin_prod_edit_prompt(update: Update, context: ContextTypes.DEFAULT_T
     if not is_admin(update.effective_user.id):
         return
 
-    # admin:prod_edit:<pid>:<campo>
     parts = query.data.split(":")
     try:
         pid = int(parts[2])
@@ -235,7 +233,6 @@ async def admin_prod_edit_handler(update: Update, context: ContextTypes.DEFAULT_
 
     texto = (update.message.text or "").strip()
 
-    # Apaga msg do admin
     try:
         await update.message.delete()
     except Exception:
@@ -258,7 +255,6 @@ async def admin_prod_edit_handler(update: Update, context: ContextTypes.DEFAULT_
     pid = info["pid"]
     campo = info["campo"]
 
-    # Valida por tipo
     try:
         if campo == "price":
             valor = float(texto.replace(",", "."))
@@ -288,14 +284,10 @@ async def admin_prod_edit_handler(update: Update, context: ContextTypes.DEFAULT_
         update.effective_user.id, f"prod_edit_{campo}", str(pid), str(valor)[:60]
     )
 
-    # Re-mostra o produto
-    query_like = type("Q", (), {"data": f"admin:product:{pid}",
-                               "message": update.message,
-                               "answer": _noop})()
     await _show_product_after_edit(update, context, pid)
 
 
-async def _show_product_after_edit(update: Update, context, pid: int):
+async def _show_product_after_edit(update, context, pid: int):
     p = await db.get_product(pid)
     if not p:
         return
@@ -326,10 +318,6 @@ async def _show_product_after_edit(update: Update, context, pid: int):
         )
     except Exception:
         pass
-
-
-async def _noop(*a, **kw):
-    return
 
 
 # ═══════════════════════════════════════════════
@@ -624,7 +612,6 @@ async def admin_new_product_handler(update: Update, context: ContextTypes.DEFAUL
         )
         return
 
-    # Terminou — cria
     context.user_data.pop("admin_new_prod", None)
 
     try:
@@ -690,7 +677,6 @@ async def admin_prod_stock_cb(update: Update, context: ContextTypes.DEFAULT_TYPE
     await _edit_or_send(query, texto, menus.admin_product_stock_v3_kb(pid))
 
 
-# ─── Adicionar contas (colar)
 async def admin_stock_add_prompt(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -758,7 +744,6 @@ async def admin_stock_add_handler(update: Update, context: ContextTypes.DEFAULT_
     )
 
 
-# ─── Importar .txt
 async def admin_stock_import_prompt(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -832,7 +817,6 @@ async def admin_stock_import_handler(update: Update, context: ContextTypes.DEFAU
     )
 
 
-# ─── Ver disponíveis / usadas
 async def admin_stock_view_cb(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -888,7 +872,6 @@ async def admin_stock_view_used_cb(update: Update, context: ContextTypes.DEFAULT
     await _edit_or_send(query, texto, menus.admin_product_stock_v3_kb(pid))
 
 
-# ─── Remover conta específica
 async def admin_stock_remove_prompt(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -948,7 +931,6 @@ async def admin_stock_remove_handler(update: Update, context: ContextTypes.DEFAU
         )
 
 
-# ─── Limpar (com confirmação)
 async def admin_stock_clear_cb(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -991,7 +973,6 @@ async def admin_stock_clear_yes_cb(update: Update, context: ContextTypes.DEFAULT
     )
 
 
-# ─── Exportar .txt
 async def admin_stock_export_cb(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -1060,9 +1041,9 @@ async def admin_prod_del_cb(update: Update, context: ContextTypes.DEFAULT_TYPE):
     stats = await db.admin_stock_stats(pid)
 
     texto = (
-        "🗑️ <b>dRemover_ Produto</b>\n"
-       soft "━━━━━━━━━━━━_d━━━━━━━━el━━━\n\n"
-        f"📦 <_cb>{p['name']}</b>\n\n"
+        "🗑️ <b>Remover Produto</b>\n"
+        "━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+        f"📦 <b>{p['name']}</b>\n\n"
         f"├ 💰 Preço: R$ {float(p['price']):.2f}\n"
         f"├ 📦 Estoque: {p['stock']}\n"
         f"├ 💵 Vendidos: {p.get('sold', 0)}\n"
@@ -1081,7 +1062,7 @@ async def admin_prod_del_cb(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await _edit_or_send(query, texto, kb)
 
 
-async def admin_prob(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def admin_prod_soft_del_cb(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     if not is_admin(update.effective_user.id):
@@ -1107,6 +1088,9 @@ async def admin_prod_hard_del_cb(update: Update, context: ContextTypes.DEFAULT_T
 
     pid = int(query.data.split(":")[2])
     p = await db.get_product(pid)
+    if not p:
+        return
+
     stats = await db.admin_stock_stats(pid)
 
     texto = (
@@ -1224,7 +1208,6 @@ def _parse_contas(texto: str) -> tuple[list[tuple[str, str]], int]:
         elif "|" in linha:
             sep = "|"
         else:
-            # só email, sem senha
             if "@" in linha:
                 contas.append((linha, "—"))
                 continue
