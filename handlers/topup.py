@@ -108,13 +108,16 @@ async def topup_value_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
         caption=messages.topup_pix_caption(
             pix_data["id"], valor, bonus, saldo_atual, saldo_futuro, pix_data["expira_em"]
         ),
-        reply_markup=menus.topup_pix_keyboard(pix_data["id"]),
+        reply_markup=menus.topup_pix_keyboard(
+            pix_data["id"],
+            copia_cola=pix_data["copia_cola"],
+        ),
         parse_mode=ParseMode.HTML,
     )
 
 
 # ═══════════════════════════════════════════════
-# 📋 COPIAR PIX
+# 📋 COPIAR PIX (fallback — popup)
 # ═══════════════════════════════════════════════
 async def topup_copy(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -139,6 +142,7 @@ async def topup_check(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.answer("PIX não encontrado.", show_alert=True)
         return
 
+    # ─── NÃO pagou
     if pix["status"] != "paid":
         await context.bot.send_message(
             chat_id=query.message.chat_id,
@@ -147,6 +151,7 @@ async def topup_check(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
 
+    # ─── PAGOU → EDITA o QR pra verde
     valor = float(pix["valor"])
     green = qrcode_gen.generate_paid_image(
         pix_code=pix["copia_cola"],
@@ -165,15 +170,18 @@ async def topup_check(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception:
         pass
 
+    # ─── Credita saldo + bônus
     bonus = float(context.user_data.get(f"bonus:{pix_id}", 0.0))
     await db.update_balance(pix["user_id"], valor + bonus)
     u = await db.get_user(pix["user_id"])
 
+    # ─── Notifica o canal
     try:
         await channel_notify.notify_topup(context.bot, u, valor, bonus)
     except Exception:
         pass
 
+    # ─── Envia msg de sucesso
     await context.bot.send_message(
         chat_id=query.message.chat_id,
         text=messages.topup_success_text(valor, bonus, float(u["balance"])),
@@ -183,7 +191,7 @@ async def topup_check(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 # ═══════════════════════════════════════════════
-# ❌ CANCELAR (recarga) — REMOVE A IMAGEM
+# ❌ CANCELAR (recarga) — DELETE + nova msg
 # ═══════════════════════════════════════════════
 async def topup_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -193,17 +201,17 @@ async def topup_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     chat_id = query.message.chat_id
 
-    # 1) Deleta a mensagem do QR Code (imagem)
+    # 1) Deleta a mensagem do QR Code
     try:
         await query.delete_message()
     except Exception:
         pass
 
-    # 2) Envia uma nova mensagem só de texto
+    # 2) Envia nova msg de texto
     try:
         await context.bot.send_message(
             chat_id=chat_id,
-            text="❌ <b>Recarga cancelada.</b>",
+            text=messages.topup_cancelled_text(),
             parse_mode=ParseMode.HTML,
         )
     except Exception:
